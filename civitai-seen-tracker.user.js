@@ -81,6 +81,11 @@
 
     function processNode(node) {
         if (node.tagName === 'A' && node.getAttribute('href')?.startsWith('/models/')) {
+            // 画像カード以外のリンク（サイドバーの詳細用テキストリンクなど）を除外
+            const isImageCard = typeof node.className === 'string' && node.className.includes('AspectRatioImageCard');
+            const hasImage = node.querySelector('img') !== null;
+            if (!isImageCard && !hasImage) return;
+
             if (node.dataset.civitaiSeenObserver) return;
             node.dataset.civitaiSeenObserver = 'true';
 
