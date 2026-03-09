@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Civitai Seen Tracker
 // @namespace    http://tampermonkey.net/
-// @version      0.3
+// @version      0.5
 // @description  Tracks seen models on Civitai
 // @author       Antigravity
 // @match        https://civitai.com/*
@@ -18,17 +18,39 @@
 
     const style = document.createElement('style');
     style.textContent = `
-        .civitai-seen-card {
+        body:not(.civitai-user-page) .civitai-seen-card {
             opacity: ${SEEN_OPACITY} !important;
             transition: opacity 0.5s ease; 
             filter: grayscale(100%);
         }
-        .civitai-seen-card:hover {
+        body:not(.civitai-user-page) .civitai-seen-card:hover {
             opacity: 1 !important;
             filter: grayscale(0%);
         }
     `;
     document.head.appendChild(style);
+
+    function checkUserPage() {
+        if (window.location.pathname.startsWith('/user/')) {
+            document.body.classList.add('civitai-user-page');
+        } else {
+            document.body.classList.remove('civitai-user-page');
+        }
+    }
+
+    // SPAのURL変更を監視
+    const originalPushState = history.pushState;
+    history.pushState = function () {
+        originalPushState.apply(this, arguments);
+        checkUserPage();
+    };
+    const originalReplaceState = history.replaceState;
+    history.replaceState = function () {
+        originalReplaceState.apply(this, arguments);
+        checkUserPage();
+    };
+    window.addEventListener('popstate', checkUserPage);
+    checkUserPage();
 
     function saveSeenModels() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify([...seenModels]));
@@ -81,6 +103,9 @@
 
     function processNode(node) {
         if (node.tagName === 'A' && node.getAttribute('href')?.startsWith('/models/')) {
+            // 通知パネル（ドロワーやダイアログ）の中にあるリンクは対象外にする
+            if (node.closest('.mantine-Drawer-root, .mantine-Drawer-body, .mantine-Popover-dropdown, .mantine-Modal-root, [role="dialog"], [role="presentation"]')) return;
+
             // 画像カード以外のリンク（サイドバーの詳細用テキストリンクなど）を除外
             const isImageCard = typeof node.className === 'string' && node.className.includes('AspectRatioImageCard');
             const hasImage = node.querySelector('img') !== null;
@@ -124,5 +149,5 @@
     setTimeout(() => scanDocument(document.body), 1000);
     scanDocument(document.body);
 
-    console.log('Civitai Seen Tracker v0.3 (Scroll-Out) started');
+    console.log('Civitai Seen Tracker v0.5 (Scroll-Out) started');
 })();
