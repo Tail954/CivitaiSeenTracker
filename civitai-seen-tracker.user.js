@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Civitai Seen Tracker
 // @namespace    http://tampermonkey.net/
-// @version      0.6
+// @version      0.7
 // @description  Tracks seen models on Civitai
 // @author       Antigravity
 // @match        https://civitai.com/*
 // @grant        GM_addStyle
-// @updateURL    https://raw.githubusercontent.com/Tail954/CivitaiSeenTracker/main/civitai-seen-tracker.user.js
-// @downloadURL  https://raw.githubusercontent.com/Tail954/CivitaiSeenTracker/main/civitai-seen-tracker.user.js
+// @updateURL    https://raw.githubusercontent.com/Tail954/CivitaiSeenTracker/master/civitai-seen-tracker.user.js
+// @downloadURL  https://raw.githubusercontent.com/Tail954/CivitaiSeenTracker/master/civitai-seen-tracker.user.js
 // ==/UserScript==
 
 (function () {
@@ -151,5 +151,5 @@
     setTimeout(() => scanDocument(document.body), 1000);
     scanDocument(document.body);
 
-    console.log('Civitai Seen Tracker v0.6 (Scroll-Out) started');
+    console.log('Civitai Seen Tracker v0.7 (Scroll-Out) started');
 })();
