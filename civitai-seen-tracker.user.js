@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Civitai Seen Tracker
 // @namespace    http://tampermonkey.net/
-// @version      0.8
+// @version      0.9
 // @description  Tracks seen models on Civitai
 // @author       Antigravity
 // @match        https://civitai.com/*
@@ -21,23 +21,24 @@
 
     const style = document.createElement('style');
     style.textContent = `
-        body:not(.civitai-user-page) .civitai-seen-card {
+        body.civitai-enable-seen .civitai-seen-card {
             opacity: ${SEEN_OPACITY} !important;
             transition: opacity 0.5s ease; 
             filter: grayscale(100%);
         }
-        body:not(.civitai-user-page) .civitai-seen-card:hover {
+        body.civitai-enable-seen .civitai-seen-card:hover {
             opacity: 1 !important;
             filter: grayscale(0%);
         }
     `;
     document.head.appendChild(style);
 
-    function checkUserPage() {
-        if (window.location.pathname.startsWith('/user/')) {
-            document.body.classList.add('civitai-user-page');
+    function updatePageState() {
+        const path = window.location.pathname;
+        if (path.startsWith('/models')) {
+            document.body.classList.add('civitai-enable-seen');
         } else {
-            document.body.classList.remove('civitai-user-page');
+            document.body.classList.remove('civitai-enable-seen');
         }
     }
 
@@ -45,15 +46,15 @@
     const originalPushState = history.pushState;
     history.pushState = function () {
         originalPushState.apply(this, arguments);
-        checkUserPage();
+        updatePageState();
     };
     const originalReplaceState = history.replaceState;
     history.replaceState = function () {
         originalReplaceState.apply(this, arguments);
-        checkUserPage();
+        updatePageState();
     };
-    window.addEventListener('popstate', checkUserPage);
-    checkUserPage();
+    window.addEventListener('popstate', updatePageState);
+    updatePageState();
 
     function saveSeenModels() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify([...seenModels]));
@@ -152,5 +153,5 @@
     setTimeout(() => scanDocument(document.body), 1000);
     scanDocument(document.body);
 
-    console.log('Civitai Seen Tracker v0.8 (Scroll-Out) started');
+    console.log('Civitai Seen Tracker v0.9 (Scroll-Out) started');
 })();
