@@ -1,7 +1,11 @@
 // ==UserScript==
 // @name         Civitai Seen Tracker
 // @namespace    http://tampermonkey.net/
+<<<<<<< HEAD
 // @version      0.20
+=======
+// @version      0.9
+>>>>>>> e24eae9d5e4530fedd7b2821540fa2600cd2fb65
 // @description  Tracks seen models on Civitai
 // @author       Antigravity
 // @match        https://civitai.com/*
@@ -25,12 +29,12 @@
 
     const style = document.createElement('style');
     style.textContent = `
-        body:not(.civitai-user-page) .civitai-seen-card {
+        body.civitai-enable-seen .civitai-seen-card {
             opacity: ${SEEN_OPACITY} !important;
             transition: opacity 0.5s ease; 
             filter: grayscale(100%);
         }
-        body:not(.civitai-user-page) .civitai-seen-card:hover {
+        body.civitai-enable-seen .civitai-seen-card:hover {
             opacity: 1 !important;
             filter: grayscale(0%);
         }
@@ -106,11 +110,16 @@
 
     function updatePageState() {
         const path = window.location.pathname;
+<<<<<<< HEAD
 
         if (path.startsWith('/user/')) {
             document.body.classList.add('civitai-user-page');
+=======
+        if (path.startsWith('/models')) {
+            document.body.classList.add('civitai-enable-seen');
+>>>>>>> e24eae9d5e4530fedd7b2821540fa2600cd2fb65
         } else {
-            document.body.classList.remove('civitai-user-page');
+            document.body.classList.remove('civitai-enable-seen');
         }
 
         const btn = document.getElementById('civitai-jump-btn');
@@ -236,6 +245,7 @@
     setTimeout(() => scanDocument(document.body), 1000);
     scanDocument(document.body);
 
+<<<<<<< HEAD
     // --- ジャンプボタン ---
 
     /**
@@ -527,4 +537,7 @@
     setTimeout(createJumpButton, 1500);
 
     console.log('Civitai Seen Tracker v0.20 (visibility-control) started');
+=======
+    console.log('Civitai Seen Tracker v0.9 (Scroll-Out) started');
+>>>>>>> e24eae9d5e4530fedd7b2821540fa2600cd2fb65
 })();

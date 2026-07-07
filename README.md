@@ -24,7 +24,11 @@ Civitaiのモデル一覧画面で、過去に見たことのあるモデルを�
 本スクリプトで記録された「閲覧済みモデル」のデータは、お使いのブラウザの **ローカルストレージ（localStorage）** に保存されています。  
 閲覧履歴をすべてリセット（削除）して、すべてのモデルのグレーアウトを解除したい場合は以下の手順を行ってください。
 
+<<<<<<< HEAD
 1. Civitaiのページ（ https://civitai.com/ or https://civitai.red/ ）を開きます。
+=======
+1. Civitaiのページ（ https://civitai.com/ または https://civitai.red/ ）を開きます。
+>>>>>>> e24eae9d5e4530fedd7b2821540fa2600cd2fb65
 2. キーボードの `F12` キー（または `Ctrl` + `Shift` + `I`）を押して、ブラウザの**開発者ツール**を開きます。
 3. 上部のタブから **「Application（アプリケーション）」** または **「Storage（ストレージ）」** を選択します。
 4. 左側のメニューの「Storage」から **「Local Storage」** を展開し、`https://civitai.com` をクリックします。
