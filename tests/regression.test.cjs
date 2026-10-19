@@ -397,7 +397,8 @@ if (!baselineRef) {
         assert.equal(h.intersections.length, 1);
         assert.equal(h.mutations.length, 1);
         assert.equal(h.intersections[0].calls.length, 1);
-        assert.equal(h.document.head.querySelectorAll('style').length, 1);
+        assert.equal(h.document.head.querySelectorAll('style').length, 2);
+        assert.equal(h.document.querySelectorAll('#civitai-date-filter-button').length, 1);
         assert.equal(h.document.querySelectorAll('#civitai-jump-btn').length, 1);
         assert.equal(h.document.querySelectorAll('#civitai-jump-tooltip').length, 1);
         assert.equal(h.writes.length, 0);

@@ -2,7 +2,8 @@ const vm = require('node:vm');
 
 // A deterministic DOM/Observer/timer substitute. CSS rendering and layout are
 // deliberately outside this harness; see the manual browser checklist.
-function createHarness(source, { host = 'civitai.com', path = '/models', saved = [], cards = [] } = {}) {
+function createHarness(source, { host = 'civitai.com', path = '/models', saved = [], cards = [],
+    dateSettings = { enabled: false }, fetchImpl = async () => { throw new Error('Unexpected API request'); } } = {}) {
     const timers = new Map();
     const events = new Map();
     const intersections = [];
@@ -14,6 +15,7 @@ function createHarness(source, { host = 'civitai.com', path = '/models', saved =
     let now = 0;
     let nextTimer = 0;
     let document;
+    const epoch = Date.parse('2026-10-19T01:00:00.000Z');
 
     class Element {
         constructor(tag) {
@@ -64,6 +66,8 @@ function createHarness(source, { host = 'civitai.com', path = '/models', saved =
             child.parentElement = this;
             return child;
         }
+        append(...children) { for (const child of children) this.appendChild(child); }
+        remove() { this.parentElement?.removeChild(this); }
         removeChild(child) {
             this.children.splice(this.children.indexOf(child), 1);
             child.parentElement = null;
@@ -108,8 +112,9 @@ function createHarness(source, { host = 'civitai.com', path = '/models', saved =
             this.handlers.set(type, handlers);
         }
         click() {
-            return Promise.all((this.handlers.get('click') || []).map(handler => handler()));
+            return this.dispatch('click');
         }
+        dispatch(type) { return Promise.all((this.handlers.get(type) || []).map(handler => handler({ target: this }))); }
         scrollTo(options) { this.scrollTop = options.top; scrolls.push({ element: this, ...options }); }
         scrollBy(options) { this.scrollTop += options.top; scrolls.push({ element: this, by: true, ...options }); }
         scrollIntoView(options) { scrolls.push({ element: this, intoView: true, ...options }); }
@@ -139,9 +144,13 @@ function createHarness(source, { host = 'civitai.com', path = '/models', saved =
     }
     const initialCards = cards.map(card => typeof card === 'object' ? addCard(card.id, card) : addCard(card));
     const values = new Map(saved === null ? [] : [['civitai_seen_models', JSON.stringify(saved)]]);
+    if (dateSettings) values.set('civitai_date_filter_settings', JSON.stringify({
+        savedOn: '2026-10-19', day: '2026-10-19', ...dateSettings
+    }));
     const window = {
         location: new URL(`https://${host}${path}`),
         innerHeight: 1000,
+        fetch: fetchImpl,
         addEventListener(type, handler) {
             const handlers = events.get(type) || [];
             handlers.push(handler);
@@ -163,6 +172,7 @@ function createHarness(source, { host = 'civitai.com', path = '/models', saved =
         IntersectionObserver: class {
             constructor(callback, options) { this.callback = callback; this.options = options; this.targets = new Set(); this.calls = []; intersections.push(this); }
             observe(target) { this.targets.add(target); this.calls.push(target); }
+            unobserve(target) { this.targets.delete(target); }
         },
         MutationObserver: class {
             constructor(callback) { this.callback = callback; this.calls = []; mutations.push(this); }
@@ -170,15 +180,21 @@ function createHarness(source, { host = 'civitai.com', path = '/models', saved =
         },
         setTimeout(callback, delay) { const id = ++nextTimer; timers.set(id, { at: now + delay, callback }); return id; },
         clearTimeout: id => timers.delete(id),
-        Date: class extends Date { static now() { return now; } },
+        Date: class extends Date {
+            constructor(...args) { super(...(args.length ? args : [epoch + now])); }
+            static now() { return epoch + now; }
+        },
+        AbortController,
         alert: message => alerts.push(message),
         console: { log: (...args) => logs.push(args.join(' ')) }
     });
+    window.setTimeout = context.setTimeout;
+    window.clearTimeout = context.clearTimeout;
     function run() { vm.runInContext(source, context, { filename: 'civitai-seen-tracker.user.js' }); }
     async function advance(ms) {
         const until = now + ms;
         for (let iterations = 0; iterations < 10000; iterations++) {
-            await Promise.resolve();
+            for (let tick = 0; tick < 12; tick++) await Promise.resolve();
             const pending = [...timers.entries()].filter(([, timer]) => timer.at <= until).sort((a, b) => a[1].at - b[1].at || a[0] - b[0]);
             if (!pending.length) { now = until; await Promise.resolve(); return; }
             const [id, timer] = pending[0];
@@ -190,7 +206,7 @@ function createHarness(source, { host = 'civitai.com', path = '/models', saved =
     }
     run();
     return {
-        document, window, history, events, intersections, mutations, writes, alerts, logs, scrolls, initialCards,
+        document, window, history, events, intersections, mutations, writes, alerts, logs, scrolls, initialCards, values,
         addCard, advance, run,
         stored: () => JSON.parse(values.get('civitai_seen_models') || '[]'),
         enter: link => intersections[0].callback([{ target: link, isIntersecting: true }]),

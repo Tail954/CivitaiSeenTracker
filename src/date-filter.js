@@ -3,13 +3,10 @@
  * getCards() -> [{ modelId, link, cardElement }],
  * onCardsChanged(callback) -> unsubscribe function,
  * getCompletePageDates(card) -> { complete: true, versions: [{ createdAt }] } | null,
- * shouldStopJump(), and isApiVersionListComplete(responseBody).
+ * shouldStopJump(), onEligibilityChanged(modelId?), apiContractKey, loadDay,
+ * and isApiVersionListComplete(responseBody, modelId).
  */
-(function (root, factory) {
-    const api = factory();
-    if (typeof module === 'object' && module.exports) module.exports = api;
-    else if (root) root.CivitaiDateFilter = api;
-})(typeof window !== 'undefined' ? window : globalThis, function () {
+function createCivitaiDateFilterModule() {
     'use strict';
 
     const SETTINGS_KEY = 'civitai_date_filter_settings';
@@ -17,6 +14,11 @@
     const DAY_MS = 24 * 60 * 60 * 1000;
     const RECENT_CACHE_TTL = 15 * 60 * 1000;
     const CACHE_TTL = DAY_MS;
+
+    function timestamp(value) {
+        return typeof value === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
+            ? Date.parse(value) : NaN;
+    }
 
     function jstToday(now = new Date()) {
         const parts = new Intl.DateTimeFormat('en-CA', {
@@ -54,7 +56,7 @@
     function versionsMatch(versions, selection, mode) {
         if (!Array.isArray(versions) || versions.length === 0) return null;
         const timestamps = versions.map(version => version && version.createdAt)
-            .filter(value => typeof value === 'string' && Number.isFinite(Date.parse(value)));
+            .filter(value => Number.isFinite(timestamp(value)));
         if (!timestamps.length || timestamps.length !== versions.length) return null;
         if (mode === 'registered') {
             const earliest = Math.min(...timestamps.map(Date.parse));
@@ -65,7 +67,7 @@
 
     function supportedPage(location) {
         return ['civitai.com', 'civitai.red'].includes(location.hostname)
-            && /^\/models(?:\/|$)/.test(location.pathname);
+            && /^\/models\/?$/.test(location.pathname);
     }
 
     function defaultSettings(today) {
@@ -95,15 +97,16 @@
 
     function createDateFilter(options) {
         const { window: win, document: doc, storage, getCards, onCardsChanged,
-            getCompletePageDates, isApiVersionListComplete = () => false,
-            shouldStopJump = () => {}, fetchImpl = win.fetch.bind(win),
+            getCompletePageDates, isApiVersionListComplete = () => false, apiContractKey = '',
+            shouldStopJump = () => {}, onEligibilityChanged = () => {},
+            fetchImpl = (...args) => win.fetch(...args),
             now = () => new Date() } = options;
         if (!win || !doc || !storage || typeof getCards !== 'function') {
             throw new TypeError('window, document, storage and getCards are required');
         }
         if (!supportedPage(win.location)) return { supported: false, destroy() {} };
 
-        const today = jstToday(now());
+        const today = options.loadDay || jstToday(now());
         const state = readSettings(storage, today);
         const statuses = new Map();
         const cache = readCache(storage);
@@ -112,24 +115,31 @@
         }
         const inflight = new Map();
         const queue = [];
-        let activeRequests = 0;
+        const activeTasks = new Set();
+        const touchedCards = new Set();
         let generation = 0;
         let destroyed = false;
         let retryAfter = 0;
-        let rateLimitRetryUsed = false;
         let notice = '';
         let panel;
         let statusNode;
         let button;
         let unsubscribeCards;
+        let styleNode;
+        let retryTimer;
+        let lastSelection = '';
+        let currentCards = [];
+        let requestsScheduled = 0;
 
         function persistSettings() {
             state.savedOn = today;
-            storage.setItem(SETTINGS_KEY, JSON.stringify(state));
+            try { storage.setItem(SETTINGS_KEY, JSON.stringify(state)); }
+            catch (_) { notice = '設定を保存できません'; }
         }
 
         function persistCache() {
-            storage.setItem(CACHE_KEY, JSON.stringify(cache));
+            try { storage.setItem(CACHE_KEY, JSON.stringify(cache)); }
+            catch (_) { notice = '日付キャッシュを保存できません'; }
         }
 
         function readCache(source) {
@@ -150,10 +160,13 @@
         function cardId(card) { return String(card.modelId); }
 
         function cacheValid(entry, selectedDay) {
-            if (!entry || !Number.isFinite(entry.savedAt) || !Array.isArray(entry.versions)) return false;
+            if (!apiContractKey || !entry || entry.contract !== apiContractKey || entry.schema !== 1
+                || !Number.isFinite(entry.savedAt) || !Array.isArray(entry.versions)) return false;
             const latestSelectedDay = state.range ? state.endDay : selectedDay;
-            const ttl = latestSelectedDay >= today ? RECENT_CACHE_TTL : CACHE_TTL;
-            return now().getTime() - entry.savedAt < ttl;
+            const yesterday = jstToday(new Date(jstDayStart(today) - DAY_MS));
+            const ttl = latestSelectedDay >= yesterday ? RECENT_CACHE_TTL : CACHE_TTL;
+            const age = now().getTime() - entry.savedAt;
+            return age >= 0 && age < ttl;
         }
 
         function evaluate(card) {
@@ -166,78 +179,114 @@
             }
             const hit = cacheValid(cache[id], state.range ? state.startDay : state.day) ? cache[id] : null;
             if (hit) return Promise.resolve(hit.versions);
+            if (!apiContractKey) {
+                notice = 'このドメインの日付APIは未検証のため、カードを表示したままにします';
+                return Promise.resolve(null);
+            }
             return enqueue(id);
         }
 
         function enqueue(id) {
             if (inflight.has(id)) return inflight.get(id).promise;
-            if (retryAfter === Infinity) return Promise.resolve(null);
+            if (retryAfter > now().getTime()) return Promise.resolve(null);
+            if (requestsScheduled >= 100) {
+                notice = '取得上限に達しました。未判定カードを表示しています。必要なら「再取得」を押してください';
+                return Promise.resolve(null);
+            }
+            requestsScheduled++;
             let resolve;
             const promise = new Promise(done => { resolve = done; });
             const controller = new AbortController();
-            inflight.set(id, { promise, resolve, controller, token: generation });
-            queue.push({ id, controller });
+            const task = { id, promise, resolve, controller, done: false, timeout: null };
+            inflight.set(id, task);
+            queue.push(task);
             pump();
             return promise;
         }
 
+        function finishTask(task, versions) {
+            if (task.done) return;
+            task.done = true;
+            win.clearTimeout(task.timeout);
+            activeTasks.delete(task);
+            if (inflight.get(task.id) === task) inflight.delete(task.id);
+            task.resolve(versions);
+            pump();
+        }
+
+        function cancelRequests() {
+            queue.length = 0;
+            for (const task of [...inflight.values()]) {
+                task.controller.abort();
+                finishTask(task, null);
+            }
+            win.clearTimeout(retryTimer);
+        }
+
+        function pauseForRateLimit(response) {
+            notice = 'API制限中です。カードを表示したまま取得を停止しています';
+            const header = response.headers?.get('Retry-After');
+            const seconds = header != null && /^\d+$/.test(header) ? Number(header) : null;
+            const specified = seconds == null ? Date.parse(header) : now().getTime() + seconds * 1000;
+            retryAfter = Math.max(now().getTime() + 60_000, Number.isFinite(specified) ? specified : 0);
+            // No automatic retry: explicitly retry with the panel's refresh control.
+            for (const task of queue.splice(0)) finishTask(task, null);
+            win.clearTimeout(retryTimer);
+            retryTimer = win.setTimeout(() => {
+                if (now().getTime() >= retryAfter) {
+                    retryAfter = 0;
+                    notice = 'API制限の待機が終わりました。「再取得」で再開できます';
+                }
+                renderCounts(currentCards);
+            }, Math.min(2_147_483_647, retryAfter - now().getTime()));
+        }
+
         function pump() {
-            while (!destroyed && state.enabled && activeRequests < 2 && queue.length && Date.now() >= retryAfter) {
+            while (!destroyed && state.enabled && activeTasks.size < 2 && queue.length && now().getTime() >= retryAfter) {
                 const task = queue.shift();
-                const record = inflight.get(task.id);
-                if (!record || record.controller !== task.controller || task.controller.signal.aborted) continue;
-                activeRequests++;
-                Promise.resolve().then(() => fetchImpl(`/api/v1/models/${encodeURIComponent(task.id)}`, { signal: task.controller.signal }))
+                if (task.done || inflight.get(task.id) !== task || task.controller.signal.aborted) continue;
+                activeTasks.add(task);
+                task.timeout = win.setTimeout(() => {
+                    task.controller.abort();
+                    notice = '日付情報の取得がタイムアウトしました';
+                    finishTask(task, null);
+                }, 15_000);
+                Promise.resolve().then(() => {
+                    if (task.done || destroyed || !state.enabled) return null;
+                    return fetchImpl(`/api/v1/models/${encodeURIComponent(task.id)}`, { signal: task.controller.signal });
+                })
                     .then(async response => {
+                        if (task.done || !response) return null;
                         if (response.status === 429) {
-                            notice = 'API制限のため取得を一時停止します';
-                            renderCounts(getCards());
-                            if (!rateLimitRetryUsed) {
-                                rateLimitRetryUsed = true;
-                                retryAfter = Date.now() + 60_000;
-                                win.setTimeout(() => {
-                                    if (retryAfter !== Infinity) { retryAfter = 0; pump(); }
-                                }, 60_000);
-                            } else {
-                                retryAfter = Infinity;
-                                while (queue.length) {
-                                    const queued = queue.shift();
-                                    const pending = inflight.get(queued.id);
-                                    if (pending && pending.controller === queued.controller) {
-                                        inflight.delete(queued.id); pending.resolve(null);
-                                    }
-                                }
-                            }
+                            pauseForRateLimit(response);
                             return null;
                         }
                         if (!response.ok) { notice = '日付情報を取得できないモデルがあります'; return null; }
                         const body = await response.json();
-                        return isApiVersionListComplete(body) && Array.isArray(body && body.modelVersions)
+                        return !task.done && String(body && body.id) === task.id
+                            && isApiVersionListComplete(body, task.id) && Array.isArray(body && body.modelVersions)
                             ? body.modelVersions : null;
                     })
                     .then(versions => {
-                        if (versions && versions.length && versionsMatch(versions, { range: false, date: today }, 'updated') !== null) {
-                            cache[task.id] = { versions, savedAt: now().getTime() };
+                        if (!task.done && versions && versions.length && versionsMatch(versions, { range: false, date: today }, 'updated') !== null) {
+                            versions = versions.map(({ createdAt }) => ({ createdAt }));
+                            cache[task.id] = { schema: 1, contract: apiContractKey, versions, savedAt: now().getTime() };
+                            const entries = Object.keys(cache).sort((a, b) => cache[b].savedAt - cache[a].savedAt);
+                            for (const id of entries.slice(500)) delete cache[id];
                             persistCache();
                             return versions;
                         }
                         return null;
                     })
-                    .catch(() => { notice = '通信に失敗したモデルがあります'; return null; })
-                    .then(versions => {
-                        const current = inflight.get(task.id);
-                        if (current && current.controller === task.controller) {
-                            inflight.delete(task.id);
-                            current.resolve(versions);
-                        }
-                    })
-                    .finally(() => { activeRequests--; pump(); });
+                    .catch(() => { if (!task.done) notice = '通信に失敗したモデルがあります'; return null; })
+                    .then(versions => finishTask(task, versions));
             }
         }
 
         function setVisibility(card, visible) {
             const element = card.cardElement;
             if (!element || !element.classList) return;
+            touchedCards.add(element);
             element.classList.toggle('civitai-date-filter-hidden', !visible && state.enabled);
         }
 
@@ -251,14 +300,40 @@
                 else if (value === 'pending') pending++;
                 else if (value === 'unknown') failed++;
             }
-            statusNode.textContent = `読み込み済み ${cards.length}・表示 ${matching + pending + failed}・不一致 ${nonmatching}・判定待ち ${pending}・未判定 ${failed}${notice ? `・${notice}` : ''}`;
+            const message = `読み込み済み ${cards.length}・表示 ${matching + pending + failed}・不一致 ${nonmatching}・判定待ち ${pending}・未判定 ${failed}${notice ? `・${notice}` : ''}`;
+            if (statusNode.textContent !== message) statusNode.textContent = message;
         }
 
-        async function apply() {
+        function apply(force = false) {
             if (destroyed) return;
-            const token = ++generation;
             const cards = getCards().filter(card => card && card.modelId != null && card.cardElement);
+            if (force) cards.sort((a, b) => Number(statuses.get(cardId(b)) === 'unknown') - Number(statuses.get(cardId(a)) === 'unknown'));
+            currentCards = cards;
+            const elements = new Set(cards.map(card => card.cardElement));
+            for (const element of touchedCards) {
+                if (!elements.has(element)) {
+                    element.classList.remove('civitai-date-filter-hidden');
+                    touchedCards.delete(element);
+                }
+            }
             const selected = selection();
+            const signature = JSON.stringify([state.enabled, state.mode, selected]);
+            const changed = force || signature !== lastSelection;
+            if (changed) {
+                generation++;
+                lastSelection = signature;
+                cancelRequests();
+                statuses.clear();
+            }
+            const currentIds = new Set(cards.map(cardId));
+            for (const id of statuses.keys()) if (!currentIds.has(id)) statuses.delete(id);
+            const obsolete = [...inflight.values()].filter(task => !currentIds.has(task.id));
+            for (const task of obsolete) {
+                const index = queue.indexOf(task);
+                if (index >= 0) queue.splice(index, 1);
+            }
+            for (const task of obsolete) { task.controller.abort(); finishTask(task, null); }
+            const token = generation;
             for (const card of cards) {
                 const id = cardId(card);
                 if (!state.enabled) {
@@ -271,16 +346,24 @@
                     setVisibility(card, true);
                     continue;
                 }
+                if (statuses.has(id)) {
+                    setVisibility(card, statuses.get(id) !== 'nonmatching');
+                    continue;
+                }
                 statuses.set(id, 'pending');
                 setVisibility(card, true);
                 evaluate(card).then(versions => {
-                    if (destroyed || token !== generation) return;
+                    if (destroyed || token !== generation || !currentCards.some(current => cardId(current) === id)) return;
                     const matched = versions && versionsMatch(versions, selected, state.mode);
                     statuses.set(id, matched === null ? 'unknown' : matched ? 'matching' : 'nonmatching');
-                    setVisibility(card, matched !== false);
-                    renderCounts(cards);
+                    for (const current of currentCards) {
+                        if (cardId(current) === id) setVisibility(current, matched !== false);
+                    }
+                    onEligibilityChanged(id);
+                    renderCounts(currentCards);
                 });
             }
+            if (changed) onEligibilityChanged();
             renderCounts(cards);
         }
 
@@ -302,6 +385,7 @@
 
         function buildUi() {
             const style = make('style');
+            styleNode = style;
             style.textContent = `
                 #civitai-date-filter-button { position:fixed; right:76px; bottom:80px; z-index:100000; }
                 #civitai-date-filter-panel { position:fixed; right:20px; bottom:190px; z-index:100001; width:min(320px,calc(100vw - 40px)); padding:14px; border-radius:10px; background:#202124; color:#fff; box-shadow:0 4px 20px #0008; font:14px/1.4 sans-serif; }
@@ -340,9 +424,8 @@
                 state.enabled = enabled.checked;
                 if (state.enabled) shouldStopJump();
                 else {
-                    for (const item of inflight.values()) { item.controller.abort(); item.resolve(null); }
-                    inflight.clear(); queue.length = 0;
-                    retryAfter = 0; rateLimitRetryUsed = false; notice = '';
+                    cancelRequests();
+                    notice = '';
                     for (const card of getCards()) setVisibility(card, true);
                 }
                 persistSettings(); refreshButtonLabel(); apply();
@@ -398,6 +481,16 @@
                 nav.append(control);
             }
             panel.append(nav);
+            const refresh = make('button', { type: 'button', text: '再取得' });
+            refresh.addEventListener('click', () => {
+                if (!state.enabled) return;
+                if (retryAfter > now().getTime()) { notice = 'API制限の待機中です'; renderCounts(currentCards); return; }
+                for (const card of getCards()) delete cache[cardId(card)];
+                requestsScheduled = 0;
+                notice = '';
+                apply(true);
+            });
+            panel.append(refresh);
             refreshButtonLabel();
             statusNode = make('p', { 'aria-live': 'polite', text: '' });
             panel.append(statusNode);
@@ -421,15 +514,16 @@
                 destroyed = true;
                 generation++;
                 if (typeof unsubscribeCards === 'function') unsubscribeCards();
-                for (const item of inflight.values()) {
-                    item.controller.abort(); item.resolve(null);
-                }
-                inflight.clear(); queue.length = 0;
-                for (const card of getCards()) setVisibility(card, true);
-                button?.remove(); panel?.remove();
+                cancelRequests();
+                for (const element of touchedCards) element.classList.remove('civitai-date-filter-hidden');
+                touchedCards.clear();
+                button?.remove(); panel?.remove(); styleNode?.remove();
             }
         };
     }
 
     return { createDateFilter, dateMatches, jstDayStart, jstToday, normalizeRange, supportedPage, validDate, versionsMatch };
-});
+}
+
+// CommonJS export is excluded from the single-file userscript build.
+if (typeof module === 'object' && module.exports) module.exports = createCivitaiDateFilterModule();

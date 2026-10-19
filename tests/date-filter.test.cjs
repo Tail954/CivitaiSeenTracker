@@ -40,7 +40,8 @@ test('updated mode matches any version; registered mode uses the oldest version'
 
 test('date filtering only starts on supported model pages and domains', () => {
   assert.equal(supportedPage({ hostname: 'civitai.com', pathname: '/models' }), true);
-  assert.equal(supportedPage({ hostname: 'civitai.red', pathname: '/models/123' }), true);
+  assert.equal(supportedPage({ hostname: 'civitai.red', pathname: '/models/123' }), false);
+  assert.equal(supportedPage({ hostname: 'civitai.red', pathname: '/models/' }), true);
   assert.equal(supportedPage({ hostname: 'civitai.com', pathname: '/user/name' }), false);
   assert.equal(supportedPage({ hostname: 'other.example', pathname: '/models' }), false);
 });
@@ -53,6 +54,7 @@ class FakeClassList {
     return enabled;
   }
   contains(name) { return this.values.has(name); }
+  remove(name) { this.values.delete(name); }
 }
 
 class FakeElement {
@@ -82,6 +84,7 @@ function setup(options = {}) {
   const window = {
     location: { hostname: 'civitai.com', pathname: '/models' },
     setTimeout(callback, delay) { return setTimeout(callback, delay); },
+    clearTimeout(id) { clearTimeout(id); },
     fetch() { throw new Error('unexpected fetch'); }
   };
   const card = options.card || { modelId: 77, cardElement: new FakeElement('article') };
@@ -89,8 +92,9 @@ function setup(options = {}) {
   let fetches = 0;
   const api = createDateFilter({
     window, document, storage, getCards: () => cards, now: () => new Date('2026-10-19T01:00:00Z'),
-    fetchImpl: async () => { fetches++; return { ok: true, status: 200, json: async () => ({ modelVersions: [{ createdAt: start }] }) }; },
+    fetchImpl: async () => { fetches++; return { ok: true, status: 200, json: async () => ({ id: 77, modelVersions: [{ createdAt: start }] }) }; },
     isApiVersionListComplete: () => true,
+    apiContractKey: 'fixture-v1',
     ...options
   });
   return { api, card, document, elements, storage, store, get fetches() { return fetches; }, window };
@@ -114,7 +118,7 @@ test('controller gates unseen recording until a complete matching result and pre
 
 test('controller hides only a confirmed mismatch and exposes a matching card to SeenTracker', async () => {
   const ctx = setup({ fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({
-    modelVersions: [{ createdAt: '2026-10-18T14:59:59Z' }]
+    id: 77, modelVersions: [{ createdAt: '2026-10-18T14:59:59Z' }]
   }) }) });
   await flush();
   assert.equal(ctx.api.getStatus(77), 'nonmatching');
@@ -177,7 +181,7 @@ test('API requests are deduplicated by model ID and limited to two concurrent re
     const id = Number(path.split('/').pop());
     requestCount++; active++; maxActive = Math.max(maxActive, active);
     return new Promise(resolve => pending.set(id, body => { active--; resolve({
-      ok: true, status: 200, json: async () => body
+      ok: true, status: 200, json: async () => ({ id, ...body })
     }); }));
   };
   const ctx = setup({ cards, fetchImpl });
@@ -207,4 +211,45 @@ test('turning filtering off aborts in-flight date requests', async () => {
   assert.equal(requestSignal.aborted, true);
   assert.equal(ctx.api.canRecordSeen(77), true);
   ctx.api.destroy();
+});
+
+test('complete page dates precede the API and timezone-less timestamps remain unknown', async () => {
+  const page = setup({ getCompletePageDates: () => ({ complete: true, versions: [{ createdAt: start }] }) });
+  await flush();
+  assert.equal(page.fetches, 0);
+  assert.equal(page.api.getStatus(77), 'matching');
+  page.api.destroy();
+  assert.equal(versionsMatch([{ createdAt: '2026-10-19T01:00:00' }], { range: false, date: TODAY }, 'updated'), null);
+});
+
+test('recent selections including yesterday expire in fifteen minutes; older days can use a daily cache', async () => {
+  for (const [day, expectedFetches] of [['2026-10-18', 1], ['2026-10-17', 0]]) {
+    const values = new Map([
+      ['civitai_date_filter_settings', JSON.stringify({ savedOn: TODAY, day })],
+      ['civitai_model_date_cache', JSON.stringify({ 77: {
+        schema: 1, contract: 'fixture-v1', savedAt: Date.parse('2026-10-19T00:40:00Z'),
+        versions: [{ createdAt: `${day}T01:00:00+09:00` }]
+      } })]
+    ]);
+    const ctx = setup({ storage: { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) } });
+    await flush();
+    assert.equal(ctx.fetches, expectedFetches);
+    ctx.api.destroy();
+  }
+});
+
+test('an open page preserves the selected day across midnight and restores its hidden elements on destroy', async () => {
+  let clock = new Date('2026-10-19T01:00:00Z');
+  let notify;
+  const ctx = setup({ now: () => clock, onCardsChanged: listener => { notify = listener; return () => { notify = null; }; },
+    fetchImpl: async () => ({ status: 200, ok: true, json: async () => ({ id: 77, modelVersions: [{ createdAt: '2026-10-17T01:00:00Z' }] }) }) });
+  await flush();
+  assert.equal(ctx.card.cardElement.classList.contains('civitai-date-filter-hidden'), true);
+  clock = new Date('2026-10-20T01:00:00Z');
+  notify(); await flush();
+  assert.equal(ctx.elements.find(node => node.attributes['aria-label'] === '対象日').value, TODAY);
+  ctx.api.destroy();
+  assert.equal(notify, null);
+  assert.equal(ctx.card.cardElement.classList.contains('civitai-date-filter-hidden'), false);
+  assert.ok(ctx.document.head.children[0].removed);
 });
