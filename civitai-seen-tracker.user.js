@@ -14,17 +14,40 @@
 (function () {
     'use strict';
 
+    // SPA遷移や同一ページでの再実行で、UI・Observer・履歴フックを重複させない。
+    const INSTANCE_KEY = Symbol.for('CivitaiSeenTracker.instance');
+    if (window[INSTANCE_KEY]) return;
+
     const SEEN_OPACITY = '0.3';
     const STORAGE_KEY = 'civitai_seen_models';
     const BOUNDARY_WINDOW_SIZE = 20;    // スライディングウィンドウのカード数
     const BOUNDARY_THRESHOLD = 0.80;    // 既読率の閾値（80%）
     const MIN_CARDS_BEFORE_CHECK = 10;  // 境界チェック開始までの最小カード数
+    const CARD_LINK_SELECTOR = 'a[href^="/models/"]';
+    const OVERLAY_SELECTOR = '.mantine-Drawer-root, .mantine-Drawer-body, .mantine-Popover-dropdown, .mantine-Modal-root, [role="dialog"], [role="presentation"]';
+    const JUMP_EXCLUSION_SELECTOR = `${OVERLAY_SELECTOR}, nav, header, footer`;
 
-    let seenModels = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
+    const seenModels = createSeenStore();
     let isAutoScrolling = false;
 
-    const style = document.createElement('style');
-    style.textContent = `
+    // 永続化: 既存のJSON配列・ID型・保存順序を維持し、新規閲覧時のみ書き込む。
+    function createSeenStore() {
+        const models = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
+        return {
+            has: modelId => models.has(modelId),
+            get size() { return models.size; },
+            remember(modelId) {
+                if (models.has(modelId)) return;
+                models.add(modelId);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify([...models]));
+            }
+        };
+    }
+
+    // UI/CSS: 表示とジャンプ中のボタン状態だけを扱う。
+    function installStyles() {
+        const style = document.createElement('style');
+        style.textContent = `
         body.civitai-seen-enabled .civitai-seen-card {
             opacity: ${SEEN_OPACITY} !important;
             transition: opacity 0.5s ease; 
@@ -102,46 +125,62 @@
             100% { outline-color: transparent; }
         }
     `;
-    document.head.appendChild(style);
+        document.head.appendChild(style);
+    }
+
+    function setJumpButtonScrolling(btn, scrolling) {
+        btn.classList.toggle('scrolling', scrolling);
+        btn.querySelector('.btn-icon').textContent = scrolling ? '⏹' : '⏬';
+    }
+
+    function highlightCard(link) {
+        const card = getCardElement(link);
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.classList.add('civitai-last-seen-highlight');
+        setTimeout(() => card.classList.remove('civitai-last-seen-highlight'), 3500);
+    }
+
+    // ページライフサイクル: v0.21の既存パス判定をそのまま共有する。
+    function isEnabledPage() {
+        const path = window.location.pathname;
+        return path === '/' || path.startsWith('/models');
+    }
 
     function updatePageState() {
-        const path = window.location.pathname;
-
-        // トップページ または /models ページでのみグレーアウトを有効化
-        if (path === '/' || path.startsWith('/models')) {
-            document.body.classList.add('civitai-seen-enabled');
-        } else {
-            document.body.classList.remove('civitai-seen-enabled');
-        }
+        const enabled = isEnabledPage();
+        document.body.classList.toggle('civitai-seen-enabled', enabled);
 
         const btn = document.getElementById('civitai-jump-btn');
         if (btn) {
-            // トップページ または /models ページでのみボタンを表示
-            if (path === '/' || path.startsWith('/models')) {
-                btn.style.display = 'flex';
-            } else {
-                btn.style.display = 'none';
-            }
+            btn.style.display = enabled ? 'flex' : 'none';
         }
     }
 
-    // SPAのURL変更を監視
-    const originalPushState = history.pushState;
-    history.pushState = function () {
-        originalPushState.apply(this, arguments);
+    function installPageLifecycle() {
+        for (const method of ['pushState', 'replaceState']) {
+            const original = history[method];
+            history[method] = function () {
+                original.apply(this, arguments);
+                updatePageState();
+            };
+        }
+        window.addEventListener('popstate', updatePageState);
         updatePageState();
-    };
-    const originalReplaceState = history.replaceState;
-    history.replaceState = function () {
-        originalReplaceState.apply(this, arguments);
-        updatePageState();
-    };
-    window.addEventListener('popstate', updatePageState);
-    updatePageState();
-
-    function saveSeenModels() {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify([...seenModels]));
     }
+
+    // カード識別: 監視とジャンプは同じID/カード判定を使い、除外範囲だけを分ける。
+    function getModelId(link) {
+        const href = link.getAttribute('href');
+        return href?.match(/\/models\/(\d+)/)?.[1] || null;
+    }
+
+    function isModelCardLink(link, exclusions = OVERLAY_SELECTOR) {
+        if (link.tagName !== 'A' || !link.getAttribute('href')?.startsWith('/models/')) return false;
+        if (link.closest(exclusions)) return false;
+        const isImageCard = typeof link.className === 'string' && link.className.includes('AspectRatioImageCard');
+        return isImageCard || link.querySelector('img') !== null;
+    }
+
     function getCardElement(linkElement) {
         let card = linkElement.closest('.mantine-Card-root, .mantine-Paper-root, article');
         if (!card) card = linkElement.parentElement?.parentElement;
@@ -152,24 +191,18 @@
         cardElement.classList.add('civitai-seen-card');
     }
 
-    const observer = new IntersectionObserver((entries) => {
+    // 閲覧登録: 画面進入で保存、退出で表示反映。ジャンプ中の進入は保存しない。
+    function handleCardIntersections(entries) {
         entries.forEach(entry => {
             const element = entry.target; // <a> tag
-            const href = element.getAttribute('href');
-            if (!href) return;
-
-            const match = href.match(/\/models\/(\d+)/);
-            if (!match) return;
-            const modelId = match[1];
+            const modelId = getModelId(element);
+            if (!modelId) return;
 
             // 画面に入った時 (Intersecting: true)
             if (entry.isIntersecting) {
                 // 自動スクロール中は既読に追加しない（通過しただけのモデルを既読にしない）
                 if (!isAutoScrolling) {
-                    if (!seenModels.has(modelId)) {
-                        seenModels.add(modelId);
-                        saveSeenModels();
-                    }
+                    seenModels.remember(modelId);
                 }
             }
             // 画面から出た時 (Intersecting: false)
@@ -183,59 +216,52 @@
                 }
             }
         });
-    }, {
-        root: null,
-        rootMargin: '0px',
-        threshold: 0 // 1ピクセルでも見えなくなったら反応
-    });
+    }
 
-    function processNode(node) {
-        if (node.tagName === 'A' && node.getAttribute('href')?.startsWith('/models/')) {
-            // 通知パネル（ドロワーやダイアログ）の中にあるリンクは対象外にする
-            if (node.closest('.mantine-Drawer-root, .mantine-Drawer-body, .mantine-Popover-dropdown, .mantine-Modal-root, [role="dialog"], [role="presentation"]')) return;
+    // DOM追跡: Observerの生成・追加ノード走査・初回/遅延走査の所有者を一箇所にする。
+    function startCardTracking() {
+        const observer = new IntersectionObserver(handleCardIntersections, {
+            root: null,
+            rootMargin: '0px',
+            threshold: 0 // 1ピクセルでも見えなくなったら反応
+        });
 
-            // 画像カード以外のリンク（サイドバーの詳細用テキストリンクなど）を除外
-            const isImageCard = typeof node.className === 'string' && node.className.includes('AspectRatioImageCard');
-            const hasImage = node.querySelector('img') !== null;
-            if (!isImageCard && !hasImage) return;
+        function processNode(node) {
+            if (!isModelCardLink(node)) return;
 
             if (node.dataset.civitaiSeenObserver) return;
             node.dataset.civitaiSeenObserver = 'true';
 
-            const href = node.getAttribute('href');
-            const match = href.match(/\/models\/(\d+)/);
-
             // 過去に閲覧済みのものは、最初から薄くする
-            if (match && seenModels.has(match[1])) {
+            const modelId = getModelId(node);
+            if (modelId && seenModels.has(modelId)) {
                 const card = getCardElement(node);
                 applySeenStyle(card);
             }
 
             observer.observe(node);
         }
-    }
 
-    function scanDocument(rootNode) {
-        const links = rootNode.querySelectorAll ? rootNode.querySelectorAll('a[href^="/models/"]') : [];
-        links.forEach(processNode);
-        if (rootNode.tagName === 'A' && rootNode.getAttribute('href')?.startsWith('/models/')) {
+        function scanDocument(rootNode) {
+            const links = rootNode.querySelectorAll ? rootNode.querySelectorAll(CARD_LINK_SELECTOR) : [];
+            links.forEach(processNode);
             processNode(rootNode);
         }
-    }
 
-    const mutationObserver = new MutationObserver((mutations) => {
-        mutations.forEach(mutation => {
-            mutation.addedNodes.forEach(node => {
-                if (node.nodeType === 1) scanDocument(node);
+        const mutationObserver = new MutationObserver((mutations) => {
+            mutations.forEach(mutation => {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === 1) scanDocument(node);
+                });
             });
         });
-    });
 
-    mutationObserver.observe(document.body, { childList: true, subtree: true });
+        mutationObserver.observe(document.body, { childList: true, subtree: true });
 
-    // 遅延実行で確実にDOM取得
-    setTimeout(() => scanDocument(document.body), 1000);
-    scanDocument(document.body);
+        // 遅延実行で確実にDOM取得
+        setTimeout(() => scanDocument(document.body), 1000);
+        scanDocument(document.body);
+    }
 
     // --- ジャンプボタン ---
 
@@ -243,16 +269,12 @@
      * DOM上のモデルカードリンクを取得（フィード上の画像カードのみ、DOM順）
      */
     function getModelCardLinks() {
-        const links = document.querySelectorAll('a[href^="/models/"]');
+        const links = document.querySelectorAll(CARD_LINK_SELECTOR);
         const result = [];
         for (const link of links) {
-            if (link.closest('.mantine-Drawer-root, .mantine-Drawer-body, .mantine-Popover-dropdown, .mantine-Modal-root, [role="dialog"], [role="presentation"], nav, header, footer')) continue;
-            const isImageCard = typeof link.className === 'string' && link.className.includes('AspectRatioImageCard');
-            const hasImage = link.querySelector('img') !== null;
-            if (!isImageCard && !hasImage) continue;
-            const href = link.getAttribute('href');
-            const match = href && href.match(/\/models\/(\d+)/);
-            if (match) result.push({ modelId: match[1], link });
+            if (!isModelCardLink(link, JUMP_EXCLUSION_SELECTOR)) continue;
+            const modelId = getModelId(link);
+            if (modelId) result.push({ modelId, link });
         }
         return result;
     }
@@ -265,6 +287,30 @@
         return document.querySelector('.scroll-area[scrollable="true"], .scroll-area') || document.documentElement;
     }
 
+    // 境界判定とエラー検出は、スクロールセッションの進行から分離する。
+    function checkBoundary(cardSequence) {
+        if (cardSequence.length < MIN_CARDS_BEFORE_CHECK) {
+            return { found: false, ratio: 0, total: cardSequence.length };
+        }
+        const windowStart = Math.max(0, cardSequence.length - BOUNDARY_WINDOW_SIZE);
+        const windowCards = cardSequence.slice(windowStart);
+        const seenCount = windowCards.filter(c => seenModels.has(c.modelId)).length;
+        const ratio = seenCount / windowCards.length;
+        return { found: ratio >= BOUNDARY_THRESHOLD, ratio, total: cardSequence.length };
+    }
+
+    function detectFetchError() {
+        const notifications = document.querySelectorAll('.mantine-Notification-root, [class*="Notification"], [role="alert"]');
+        for (const n of notifications) {
+            const text = n.textContent || '';
+            if (text.includes('Failed to fetch') || text.includes('failed to fetch') || text.includes('エラー')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // スクロール: 収集順序・重複排除・待機・停止条件はセッションごとに保持する。
     async function autoScrollToBoundary() {
         if (seenModels.size === 0) {
             alert('まだ閲覧履歴がありません。');
@@ -315,35 +361,10 @@
             }
         }
 
-        // 境界チェック: スライディングウィンドウの既読率を計算
-        function checkBoundary() {
-            if (cardSequence.length < MIN_CARDS_BEFORE_CHECK) {
-                return { found: false, ratio: 0, total: cardSequence.length };
-            }
-            const windowStart = Math.max(0, cardSequence.length - BOUNDARY_WINDOW_SIZE);
-            const windowCards = cardSequence.slice(windowStart);
-            const seenCount = windowCards.filter(c => seenModels.has(c.modelId)).length;
-            const ratio = seenCount / windowCards.length;
-            return { found: ratio >= BOUNDARY_THRESHOLD, ratio, total: cardSequence.length };
-        }
-
-        // Civitaiのエラートーストを検知
-        function detectFetchError() {
-            const notifications = document.querySelectorAll('.mantine-Notification-root, [class*="Notification"], [role="alert"]');
-            for (const n of notifications) {
-                const text = n.textContent || '';
-                if (text.includes('Failed to fetch') || text.includes('failed to fetch') || text.includes('エラー')) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
         // スクロール停止のヘルパー関数
         function stopScrolling(message, logMessage) {
             isAutoScrolling = false;
-            btn.classList.remove('scrolling');
-            btn.querySelector('.btn-icon').textContent = '⏬';
+            setJumpButtonScrolling(btn, false);
             alert(message);
             console.log(`[Seen Tracker] ${logMessage}`);
         }
@@ -351,16 +372,12 @@
         // 境界到達時に最後の未読カードにスクロール＆ハイライト
         function scrollToLastUnseen(boundary) {
             isAutoScrolling = false;
-            btn.classList.remove('scrolling');
-            btn.querySelector('.btn-icon').textContent = '⏬';
+            setJumpButtonScrolling(btn, false);
 
             const elapsed = Date.now() - startTime;
 
             if (lastUnseenCard && lastUnseenCard.link.isConnected) {
-                const card = getCardElement(lastUnseenCard.link);
-                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                card.classList.add('civitai-last-seen-highlight');
-                setTimeout(() => card.classList.remove('civitai-last-seen-highlight'), 3500);
+                highlightCard(lastUnseenCard.link);
             } else if (lastUnseenCard) {
                 console.log('[Seen Tracker] 最後の未読カードはDOMから離脱済み。現在位置で停止。');
             }
@@ -373,13 +390,10 @@
 
         // === 開始前チェック: 画面上に既に境界がないか ===
         collectNewCards();
-        const preCheck = checkBoundary();
+        const preCheck = checkBoundary(cardSequence);
         if (preCheck.found) {
             if (lastUnseenCard) {
-                const card = getCardElement(lastUnseenCard.link);
-                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                card.classList.add('civitai-last-seen-highlight');
-                setTimeout(() => card.classList.remove('civitai-last-seen-highlight'), 3500);
+                highlightCard(lastUnseenCard.link);
                 console.log(`[Seen Tracker] スクロール不要: 既読境界は画面内に存在 (既読率: ${(preCheck.ratio * 100).toFixed(0)}%, 最後の未読: Model #${lastUnseenCard.modelId})`);
             } else {
                 alert('新着コンテンツはありません。すべて閲覧済みです。');
@@ -390,8 +404,7 @@
 
         // === メインスクロールループ開始 ===
         isAutoScrolling = true;
-        btn.classList.add('scrolling');
-        btn.querySelector('.btn-icon').textContent = '⏹';
+        setJumpButtonScrolling(btn, true);
 
         console.log(`[Seen Tracker] 自動スクロール開始: 既読境界を検索 (既読数: ${seenModels.size})`);
 
@@ -432,7 +445,7 @@
 
             // 新しいカードを収集＆境界チェック
             collectNewCards();
-            const boundary = checkBoundary();
+            const boundary = checkBoundary(cardSequence);
             if (boundary.found) {
                 scrollToLastUnseen(boundary);
                 return;
@@ -497,8 +510,7 @@
 
         // ループを抜けた（中止または最大試行回数到達）
         isAutoScrolling = false;
-        btn.classList.remove('scrolling');
-        btn.querySelector('.btn-icon').textContent = '⏬';
+        setJumpButtonScrolling(btn, false);
         if (attempts >= MAX_ATTEMPTS) {
             console.log(`[Seen Tracker] 最大スクロール回数に到達しました。(${cardSequence.length}枚チェック)`);
         }
@@ -524,8 +536,15 @@
         updatePageState();
     }
 
-    // ページ読み込み後にボタン追加
-    setTimeout(createJumpButton, 1500);
+    // 起動順序と遅延時間を維持し、すべての初期化をこの入口に集約する。
+    function initialize() {
+        installStyles();
+        installPageLifecycle();
+        startCardTracking();
+        setTimeout(createJumpButton, 1500);
+        window[INSTANCE_KEY] = true;
+        console.log('Civitai Seen Tracker v0.20 (visibility-control) started');
+    }
 
-    console.log('Civitai Seen Tracker v0.20 (visibility-control) started');
+    initialize();
 })();
