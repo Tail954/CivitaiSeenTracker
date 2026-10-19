@@ -3,13 +3,13 @@
 > このファイルだけを短い最新状態として保つ。会話履歴全文・長いログは転載せず、必要ならリポジトリ内のログファイルへの相対パスを記載する。
 
 ## 現在
-- 担当: Luna（Phase 1機能実装完了。Sol-B統合へ引き継ぎ。2026-10-19 JST）
+- 担当: Sol-B（統合コード/自動試験完了。日付機能の実機確認結果とAstra-Bレビュー待ち。2026-10-19 JST）
 - Phase 0コミット: `8bb0e58ceaaafd70940b122a72ad12701beafa5a`
 - v0.20基準版調整: `694a1c1a671e3ef40c3090b464e315e35303f55c`
 - ジャンプ二重処理修正: `6bc955074b1c31b14120ff22c5a91b4ad7c96545`（基準版調整と別コミット）
 - Astra-Aゲート: Phase 0 PASS。前回の基準版/二重処理の指摘は解消確認済み。57件の自動テスト成功と、ユーザーによる両ドメインの実機確認「全項目問題ありませんでした」を根拠に、実ブラウザ確認待ちの条件を解消。
-- Luna Phase 1: 独立日付フィルターモジュールと単体試験を実装。Sol-B統合/I/F接続は未実施。
-- Sol-B統合: 未開始
+- Luna Phase 1: `e53074b`の独立実装をSol-Bが統合済み。
+- Sol-B統合: `4a9cf62`、API検証反映/遅延画像対応`86472ea`。配布ファイルは1本。自動試験91/91成功。
 - Astra-Bゲート: 未実施
 
 ## ベースライン
@@ -54,16 +54,20 @@
 ## Luna → Sol-B
 - 変更の要約: `src/date-filter.js`を追加。JST単日/範囲判定、今日初期値・同日設定保持/日付変更時の初期化、更新日/登録日モード、カレンダーUI、別キー設定/期限付きキャッシュ、モデルID単位の重複排除と同時数2、429待機、通信/不完全データをunknownとして可視維持、確定nonmatchingだけ非表示、OFF復元/進行中取得中断を実装。SeenTracker配布JSには未結合。
 - コミットID: `e53074bcc9a34b5d3d63302be77a7ef401021053`（Phase 1独立実装、Phase 0のSeenTracker配布JSは変更なし）。
-- SeenTracker I/F案（Sol-Bで接続）: `getCards() -> [{modelId, link, cardElement}]`、`onCardsChanged(callback) -> unsubscribe`、`getCompletePageDates(card) -> {complete:true, versions:[{createdAt}]} | null`、`isApiVersionListComplete(responseBody) -> boolean`、`shouldStopJump()`を注入。戻り値の`canRecordSeen(id)`はON中のmatchingだけtrue、pending/unknown/nonmatchingはfalse。`canJump()`はフィルターOFF時のみtrue。Sol-BはIntersectionObserverの進入保存前に`canRecordSeen`を確認し、ジャンプ開始時に`canJump`を確認、ON切替で`shouldStopJump`が既存ジャンプを中止するよう配線する。カード検出/ページ遷移の所有権はSol-B側に残す。
-- 完全性/制約: ページ内データは明示的に`complete:true`の場合のみ使う。詳細APIの`modelVersions`も、呼出側の`isApiVersionListComplete`がtrueと確認しない限り採用せず、unknownのまま表示する。実サイトAPI応答の完全性・Chrome/Tampermonkey通信権限は未検証。統合時に一次資料/実応答で検証し、確認できなければfalseを維持する。UI/DOMは合成DOMでの試験のみ。フィルターは読み込み済みカードに限り、DOMを削除しない。
+- SeenTracker I/F（Sol-Bで採用/接続済み）: `getCards() -> [{modelId, link, cardElement}]`、`onCardsChanged(callback) -> unsubscribe`、`getCompletePageDates(card) -> {complete:true, versions:[{createdAt}]} | null`、`isApiVersionListComplete(responseBody, modelId) -> boolean`、`shouldStopJump()`。`canRecordSeen(id)`はON中のmatchingだけtrue、pending/unknown/nonmatchingはfalse。`canJump()`はOFF時のみtrue。統合時に`onEligibilityChanged(id?)`を追加し、確定/ON-OFF変更時に既存IntersectionObserverを再監視して実際の可視状態で登録を再判定する。`loadDay`で同じページ内のSPA跨日を固定、`apiContractKey`で検証済みデータとキャッシュを区別。カード検出/ページ遷移はSeenTracker側が所有。
+- 完全性/制約: ページ内データは明示的に`complete:true`の場合のみ使う。詳細APIも完全性確認を満たさなければunknownのまま表示する。Luna納品時点では実APIは未検証だったが、その後のユーザー確認を受けてSol-Bが有効化（次節）。一覧断片は流用しない。フィルターは読み込み済みカードに限り、DOMを削除しない。
 - 実施テストと結果: `node --check src/date-filter.js`成功。`node --test --test-reporter=spec tests/date-filter.test.cjs` 11/11成功（JST境界・範囲逆転/両端・複数バージョン/登録日最古・対象ホスト/ページ・ページ/API完全性ゲート・一致/不一致/unknown可視性・設定の同日保持/日替わり・OFF復元/SeenTrackerゲート・ジャンプ中止コールバック・API重複排除/同時2・OFF時Abort）。Phase 0回帰は57/57成功。429は60秒後に一度だけ再開し、再度制限されたらOFF/ONまで取得を止める。
-- Astra-Aゲート: Phase 0 PASS済み。Phase 1モジュールはSol-Bの統合・競合検証待ち。Phase 1以降の独立レビュー/実機検証は未実施。
+- Astra-Aゲート: Phase 0 PASS済み。初回単体11件と当時の429自動再開の挙動はLuna納品時の記録。Sol-Bで単体14件へ拡張し、429は自動再開せず手動の再取得へ変更。Phase 1以降の独立レビューは未実施。
 
 ## Sol-B → Astra-B
-- 統合コミットID:
-- 競合テスト:
-- 完全非表示の検証結果:
-- フォールバックの要否・理由:
+- 統合コミットID: `4a9cf6287bd99a2ad4de65eca1a4b177c59f0212`、API確認反映/遅延画像対応`86472eaad4bcda245b14a3213240d26bd38d092c`。統合開始時HEADは`7a6c00f`、作業ツリーはクリーンだった。
+- 変更: 単一配布JS内に日付モジュールを同梱。`src/date-filter.js`を編集後、`node scripts/build-userscript.cjs`で反映、`--check`で乖離検知。メタデータ/既存CSSはv0.20のまま（リリース版番号は未更新）。フィルター対象を両ホストの`/models`・`/models/`とクエリに限定し、詳細ページは除外。既存SeenTrackerの他ページの挙動を維持。
+- 競合接続/修正: pending/unknown/nonmatchingの新規既読登録を禁止。一致確定/フィルター解除で再監視。ON中はジャンプ開始禁止、途中ONでセッション無効化。既存MutationObserverから追加/除去/href再利用/遅延画像を通知。既存結果を不要にpendingへ戻さず、ページ離脱やリスト除去で通信を中断。UI/CSS/非表示クラスを後始末し、SPA復帰時に単一UIを復元。深夜のSPA再入場でも元の選択日を維持。
+- API/負荷: ユーザーがモデル`1593793`について、両ドメインを対象にした質問に「JSONが表示されmodelVersionsに詳細画面と同じバージョンがそろい、各createdAtがある」と報告（2026-10-19 JST）。この報告を根拠に両ホストの詳細API契約を有効化。エージェントによる実応答観測ではなく、HTTPコード/ブラウザ・拡張の版番号は未採取。応答ID・バージョンID重複・タイムゾーン付き日時・明示的なページネーションを検査。未検証契約なら取得自体を開始しない。キャッシュは日付のみ/最大500モデル、今日/昨日を含む条件は15分・過去は24時間。同時2件、15秒タイムアウト、取得操作ごと最大100件（上限時は未判定表示）。再取得は未判定優先。429はRetry-After（最低60秒）後に手動で再取得、自動リトライなし。
+- 競合テスト: Node.js v22.17.0/Windows/PowerShell、91/91成功、失敗/キャンセル0。既存回帰57（日付OFFを明示）、日付単体14、統合20。両ドメインの模擬APIを使用して待機/不一致/403と履歴保護、可視性の再確認、OFF復元/ジャンプ排他、SPA/追加/除去/href再利用/遅延画像、旧応答無視、429/timeout/取得上限、キャッシュ鮮度/跨日、ビルド一致を検証。配布JS/モジュールの構文検査と`git diff --check`成功。証拠: `tests/results/integration.txt`、再実行/実機手順: `tests/README.md`。
+- 完全非表示の検証結果: `display:none !important`クラスで確定不一致だけ隠す。模擬DOMでON/OFF/離脱/カード除去時のクラス復元と元のinline display保持を確認。実レイアウト・実無限スクロール・ネイティブカレンダー操作・Tampermonkeyからの通信/日付判定は、統合版を使ったユーザー実機確認結果待ち。Phase 0の実機PASSを日付機能のPASSには転用しない。
+- フォールバックの要否・理由: 現時点では完全非表示を候補として維持。重大な実機競合の報告はまだなく、薄表示への切替根拠なし。最終採否はAstra-Bへ。モック成功だけで完全非表示を承認しない。
+- 次: 日付機能の実機結果を受領して記録し、Astra-Bが差分/証拠を監査。Astra-B判定とSol-C最終納品は未実施。
 
 ## Astra-B → Sol-C
 - 判定:
@@ -71,7 +75,7 @@
 - 未検証項目:
 
 ## 最終納品
-- コミット一覧: 入力保存`9e70723`、初回リファクタリング`8bb0e58`、初回引き継ぎ`3bda2c5`、v0.20調整`694a1c1`、二重処理修正`6bc9550`、再対応引き継ぎ`11acadc`、Luna Phase 1独立実装`e53074b`。
+- コミット一覧: 入力保存`9e70723`、初回リファクタリング`8bb0e58`、初回引き継ぎ`3bda2c5`、v0.20調整`694a1c1`、二重処理修正`6bc9550`、再対応引き継ぎ`11acadc`、Luna Phase 1独立実装`e53074b`、Sol-B統合`4a9cf62`、API確認反映`86472ea`。
 - 選択した表示方式と理由:
-- 実機動作確認状況: ユーザーが両ドメインの依頼項目すべて正常と報告。詳細はAstra-A節。エージェントによる直接確認はポリシー制限で未実施。
-- 既知の制約: Phase 1の日付フィルターは独立モジュールとして実装済み。配布用SeenTrackerへの統合、実API完全性確認、両ドメインでの日付機能実機検証、Phase 2以降は未実施。
+- 実機動作確認状況: Phase 0はユーザーが両ドメイン全項目正常と報告。詳細APIの全バージョン/createdAtもユーザー確認済み。日付機能を組み込んだ配布版の操作確認結果は未受領。エージェントによる直接確認はポリシー制限で未実施。
+- 既知の制約: Sol-B統合/自動試験まで完了。日付機能の実機操作、Astra-B最終判定、Sol-CのREADME/納品整理は未完了。
