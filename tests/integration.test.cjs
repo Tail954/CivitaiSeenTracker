@@ -17,11 +17,11 @@ const response = (id, date = dates.today, status = 200) => ({
     json: async () => ({ id: Number(id), modelVersions: [{ id: Number(id) * 10, createdAt: date, images: ['discarded'] }] })
 });
 const field = (h, label) => h.document.querySelectorAll('input').find(node => node.getAttribute('aria-label') === label);
-const hidden = record => record.card.classList.contains('civitai-date-filter-hidden');
+const excluded = record => record.card.classList.contains('civitai-date-filter-hidden') || record.card.classList.contains('civitai-date-filter-dim');
 const seenWrites = h => h.writes.filter(write => write.key === 'civitai_seen_models');
 
 for (const host of ['civitai.com', 'civitai.red']) {
-    test(`${host}: pending/hidden/error cards cannot become seen; matching cards are re-observed`, async () => {
+    test(`${host}: pending/excluded/error cards cannot become seen; matching cards are re-observed`, async () => {
         const pending = new Map();
         const h = createHarness(fixtureSource, { host, dateSettings: null, saved: ['99'], cards: ['1', '2', '3'],
             fetchImpl: url => new Promise(resolve => pending.set(url.split('/').pop(), resolve)) });
@@ -34,9 +34,9 @@ for (const host of ['civitai.com', 'civitai.red']) {
         await h.advance(0);
         pending.get('3')(response(3, dates.today, 403));
         await h.advance(0);
-        assert.equal(hidden(h.initialCards[0]), false);
-        assert.equal(hidden(h.initialCards[1]), true);
-        assert.equal(hidden(h.initialCards[2]), false);
+        assert.equal(excluded(h.initialCards[0]), false);
+        assert.equal(excluded(h.initialCards[1]), true);
+        assert.equal(excluded(h.initialCards[2]), false);
         assert.ok(h.intersections[0].calls.filter(link => link === h.initialCards[0].link).length >= 2);
         for (const { link } of h.initialCards) h.enter(link);
         assert.deepEqual(h.stored(), ['99', '1']);
@@ -53,10 +53,10 @@ for (const host of ['civitai.com', 'civitai.red']) {
             fetchImpl: async () => response(1, dates.yesterday) });
         h.initialCards[0].card.style.display = 'grid';
         await h.advance(1500);
-        assert.equal(hidden(h.initialCards[0]), true);
+        assert.equal(excluded(h.initialCards[0]), true);
         const toggle = field(h, '日付フィルターを有効にする');
         toggle.checked = false; await toggle.dispatch('change');
-        assert.equal(hidden(h.initialCards[0]), false);
+        assert.equal(excluded(h.initialCards[0]), false);
         assert.equal(h.initialCards[0].card.style.display, 'grid');
         h.enter(h.initialCards[0].link);
         assert.deepEqual(h.stored(), ['99', '1']);
@@ -104,21 +104,21 @@ for (const host of ['civitai.com', 'civitai.red']) {
         assert.equal(requests[0].signal.aborted, true);
         requests[1].resolve(response(1, dates.yesterday)); await h.advance(0);
         requests[0].resolve(response(1)); await h.advance(0);
-        assert.equal(hidden(h.initialCards[0]), false);
+        assert.equal(excluded(h.initialCards[0]), false);
         h.enter(h.initialCards[0].link);
         assert.deepEqual(h.stored(), ['1']);
     });
 
-    test(`${host}: new cards preserve earlier hidden results; href recycling is gated again`, async () => {
+    test(`${host}: new cards preserve earlier exclusion results; href recycling is gated again`, async () => {
         let calls = 0;
         const h = createHarness(fixtureSource, { host, dateSettings: null, cards: ['1'],
             fetchImpl: async url => { calls++; return response(url.split('/').pop(), dates.yesterday); } });
         await h.advance(0);
-        assert.equal(hidden(h.initialCards[0]), true);
+        assert.equal(excluded(h.initialCards[0]), true);
         const second = h.addCard('2'); h.added(second.card);
-        assert.equal(hidden(h.initialCards[0]), true);
+        assert.equal(excluded(h.initialCards[0]), true);
         await h.advance(0);
-        assert.equal(hidden(second), true);
+        assert.equal(excluded(second), true);
         assert.equal(calls, 2);
         second.link.setAttribute('href', '/models/3');
         h.mutations[0].callback([{ type: 'attributes', target: second.link, attributeName: 'href' }]);
@@ -126,7 +126,7 @@ for (const host of ['civitai.com', 'civitai.red']) {
         assert.equal(seenWrites(h).length, 0);
         await h.advance(0);
         assert.equal(calls, 3);
-        assert.equal(hidden(second), true);
+        assert.equal(excluded(second), true);
     });
 
     test(`${host}: 429 stops queued work; no automatic retry and explicit refresh honors the wait`, async () => {
@@ -156,7 +156,7 @@ test('an unverified host does not fetch or hide cards and clearly reports the re
     const h = createHarness(unverified, { dateSettings: null, cards: ['1'], fetchImpl: async () => { calls++; return response(1); } });
     await h.advance(0);
     assert.equal(calls, 0);
-    assert.equal(hidden(h.initialCards[0]), false);
+    assert.equal(excluded(h.initialCards[0]), false);
     h.enter(h.initialCards[0].link);
     assert.deepEqual(h.stored(), []);
     assert.ok(h.document.querySelectorAll('p').some(node => node.textContent.includes('未検証')));
@@ -195,12 +195,12 @@ test('a shrinking feed cannot schedule more than 100 date requests without expli
         fetchImpl: async url => { calls++; return response(url.split('/').pop(), dates.yesterday); } });
     for (let i = 0; i < 80; i++) await h.advance(0);
     assert.equal(calls, 100);
-    assert.equal(hidden(h.initialCards[119]), false);
+    assert.equal(excluded(h.initialCards[119]), false);
     const refresh = h.document.querySelectorAll('button').find(button => button.textContent === '再取得');
     await refresh.click();
     for (let i = 0; i < 80; i++) await h.advance(0);
     assert.equal(calls, 200);
-    assert.equal(hidden(h.initialCards[119]), true);
+    assert.equal(excluded(h.initialCards[119]), true);
 });
 
 test('SPA re-entry across JST midnight keeps the original page selection', async () => {
@@ -218,7 +218,7 @@ test('removed/recycled cards are restored and removed pending requests are abort
         return response(1, dates.yesterday);
     } });
     await h.advance(0);
-    assert.equal(hidden(h.initialCards[0]), true);
+    assert.equal(excluded(h.initialCards[0]), true);
     const removed = h.initialCards[1].card;
     removed.remove();
     h.mutations[0].callback([{ addedNodes: [], removedNodes: [removed] }]);
@@ -227,7 +227,7 @@ test('removed/recycled cards are restored and removed pending requests are abort
     const first = h.initialCards[0];
     first.link.setAttribute('href', '/images/other');
     h.mutations[0].callback([{ type: 'attributes', target: first.link, attributeName: 'href' }]);
-    assert.equal(hidden(first), false);
+    assert.equal(excluded(first), false);
     assert.equal(h.intersections[0].targets.has(first.link), false);
 });
 
@@ -245,5 +245,5 @@ test('an image inserted later into an existing link becomes a tracked and filter
     assert.deepEqual(h.stored(), []);
     await h.advance(0);
     assert.equal(calls, 1);
-    assert.equal(hidden(h.initialCards[0]), true);
+    assert.equal(excluded(h.initialCards[0]), true);
 });

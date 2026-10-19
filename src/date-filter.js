@@ -4,7 +4,7 @@
  * onCardsChanged(callback) -> unsubscribe function,
  * getCompletePageDates(card) -> { complete: true, versions: [{ createdAt }] } | null,
  * shouldStopJump(), onEligibilityChanged(modelId?), apiContractKey, loadDay,
- * and isApiVersionListComplete(responseBody, modelId).
+ * isApiVersionListComplete(responseBody, modelId), and nonmatchingDisplay.
  */
 function createCivitaiDateFilterModule() {
     'use strict';
@@ -98,7 +98,7 @@ function createCivitaiDateFilterModule() {
     function createDateFilter(options) {
         const { window: win, document: doc, storage, getCards, onCardsChanged,
             getCompletePageDates, isApiVersionListComplete = () => false, apiContractKey = '',
-            shouldStopJump = () => {}, onEligibilityChanged = () => {},
+            shouldStopJump = () => {}, onEligibilityChanged = () => {}, nonmatchingDisplay = 'hide',
             fetchImpl = (...args) => win.fetch(...args),
             now = () => new Date() } = options;
         if (!win || !doc || !storage || typeof getCards !== 'function') {
@@ -287,7 +287,14 @@ function createCivitaiDateFilterModule() {
             const element = card.cardElement;
             if (!element || !element.classList) return;
             touchedCards.add(element);
-            element.classList.toggle('civitai-date-filter-hidden', !visible && state.enabled);
+            const excluded = !visible && state.enabled;
+            element.classList.toggle('civitai-date-filter-hidden', excluded && nonmatchingDisplay !== 'dim');
+            element.classList.toggle('civitai-date-filter-dim', excluded && nonmatchingDisplay === 'dim');
+        }
+
+        function restoreCard(element) {
+            element.classList.remove('civitai-date-filter-hidden');
+            element.classList.remove('civitai-date-filter-dim');
         }
 
         function renderCounts(cards) {
@@ -300,7 +307,9 @@ function createCivitaiDateFilterModule() {
                 else if (value === 'pending') pending++;
                 else if (value === 'unknown') failed++;
             }
-            const message = `読み込み済み ${cards.length}・表示 ${matching + pending + failed}・不一致 ${nonmatching}・判定待ち ${pending}・未判定 ${failed}${notice ? `・${notice}` : ''}`;
+            const displayed = nonmatchingDisplay === 'dim' ? cards.length : matching + pending + failed;
+            const mode = state.enabled && nonmatchingDisplay === 'dim' ? '・不一致は黄枠の薄表示（クリック可能）' : '';
+            const message = `読み込み済み ${cards.length}・表示 ${displayed}・一致 ${matching}・不一致 ${nonmatching}・判定待ち ${pending}・未判定 ${failed}${mode}${notice && cards.length ? `・${notice}` : ''}`;
             if (statusNode.textContent !== message) statusNode.textContent = message;
         }
 
@@ -312,7 +321,7 @@ function createCivitaiDateFilterModule() {
             const elements = new Set(cards.map(card => card.cardElement));
             for (const element of touchedCards) {
                 if (!elements.has(element)) {
-                    element.classList.remove('civitai-date-filter-hidden');
+                    restoreCard(element);
                     touchedCards.delete(element);
                 }
             }
@@ -326,7 +335,13 @@ function createCivitaiDateFilterModule() {
                 statuses.clear();
             }
             const currentIds = new Set(cards.map(cardId));
-            for (const id of statuses.keys()) if (!currentIds.has(id)) statuses.delete(id);
+            // A virtualized list can remove and reinsert the same model. Retain
+            // failed/incomplete results until explicit retry/selection change.
+            // Other results are reused from the date cache with its normal TTL.
+            const absent = [...statuses.keys()].filter(id => !currentIds.has(id));
+            absent.forEach((id, index) => {
+                if (statuses.get(id) !== 'unknown' || index < absent.length - 500) statuses.delete(id);
+            });
             const obsolete = [...inflight.values()].filter(task => !currentIds.has(task.id));
             for (const task of obsolete) {
                 const index = queue.indexOf(task);
@@ -393,6 +408,11 @@ function createCivitaiDateFilterModule() {
                 #civitai-date-filter-panel label { display:flex; justify-content:space-between; align-items:center; gap:8px; margin:8px 0; }
                 #civitai-date-filter-panel button { margin:3px; }
                 .civitai-date-filter-hidden { display:none !important; }
+                body .civitai-date-filter-dim.civitai-date-filter-dim {
+                    opacity:0.45 !important; filter:none !important;
+                    outline:2px dashed #e9a23b !important; outline-offset:-2px;
+                }
+                body .civitai-date-filter-dim.civitai-date-filter-dim:hover { opacity:0.85 !important; }
             `;
             doc.head.append(style);
             button = make('button', { id: 'civitai-date-filter-button', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'civitai-date-filter-panel', text: '' });
@@ -515,7 +535,7 @@ function createCivitaiDateFilterModule() {
                 generation++;
                 if (typeof unsubscribeCards === 'function') unsubscribeCards();
                 cancelRequests();
-                for (const element of touchedCards) element.classList.remove('civitai-date-filter-hidden');
+                for (const element of touchedCards) restoreCard(element);
                 touchedCards.clear();
                 button?.remove(); panel?.remove(); styleNode?.remove();
             }
