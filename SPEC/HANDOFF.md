@@ -53,6 +53,7 @@
 
 ## Luna → Sol-B
 - 変更の要約: `src/date-filter.js`を追加。JST単日/範囲判定、今日初期値・同日設定保持/日付変更時の初期化、更新日/登録日モード、カレンダーUI、別キー設定/期限付きキャッシュ、モデルID単位の重複排除と同時数2、429待機、通信/不完全データをunknownとして可視維持、確定nonmatchingだけ非表示、OFF復元/進行中取得中断を実装。SeenTracker配布JSには未結合。
+- コミットID: `e53074bcc9a34b5d3d63302be77a7ef401021053`（Phase 1独立実装、Phase 0のSeenTracker配布JSは変更なし）。
 - SeenTracker I/F案（Sol-Bで接続）: `getCards() -> [{modelId, link, cardElement}]`、`onCardsChanged(callback) -> unsubscribe`、`getCompletePageDates(card) -> {complete:true, versions:[{createdAt}]} | null`、`isApiVersionListComplete(responseBody) -> boolean`、`shouldStopJump()`を注入。戻り値の`canRecordSeen(id)`はON中のmatchingだけtrue、pending/unknown/nonmatchingはfalse。`canJump()`はフィルターOFF時のみtrue。Sol-BはIntersectionObserverの進入保存前に`canRecordSeen`を確認し、ジャンプ開始時に`canJump`を確認、ON切替で`shouldStopJump`が既存ジャンプを中止するよう配線する。カード検出/ページ遷移の所有権はSol-B側に残す。
 - 完全性/制約: ページ内データは明示的に`complete:true`の場合のみ使う。詳細APIの`modelVersions`も、呼出側の`isApiVersionListComplete`がtrueと確認しない限り採用せず、unknownのまま表示する。実サイトAPI応答の完全性・Chrome/Tampermonkey通信権限は未検証。統合時に一次資料/実応答で検証し、確認できなければfalseを維持する。UI/DOMは合成DOMでの試験のみ。フィルターは読み込み済みカードに限り、DOMを削除しない。
 - 実施テストと結果: `node --check src/date-filter.js`成功。`node --test --test-reporter=spec tests/date-filter.test.cjs` 11/11成功（JST境界・範囲逆転/両端・複数バージョン/登録日最古・対象ホスト/ページ・ページ/API完全性ゲート・一致/不一致/unknown可視性・設定の同日保持/日替わり・OFF復元/SeenTrackerゲート・ジャンプ中止コールバック・API重複排除/同時2・OFF時Abort）。Phase 0回帰は57/57成功。429は60秒後に一度だけ再開し、再度制限されたらOFF/ONまで取得を止める。
@@ -70,7 +71,7 @@
 - 未検証項目:
 
 ## 最終納品
-- コミット一覧: 入力保存`9e70723`、初回リファクタリング`8bb0e58`、初回引き継ぎ`3bda2c5`、v0.20調整`694a1c1`、二重処理修正`6bc9550`、再対応引き継ぎ`11acadc`。Luna Phase 1実装と実機確認追記を含む後続コミットは未作成。
+- コミット一覧: 入力保存`9e70723`、初回リファクタリング`8bb0e58`、初回引き継ぎ`3bda2c5`、v0.20調整`694a1c1`、二重処理修正`6bc9550`、再対応引き継ぎ`11acadc`、Luna Phase 1独立実装`e53074b`。
 - 選択した表示方式と理由:
 - 実機動作確認状況: ユーザーが両ドメインの依頼項目すべて正常と報告。詳細はAstra-A節。エージェントによる直接確認はポリシー制限で未実施。
 - 既知の制約: Phase 1の日付フィルターは独立モジュールとして実装済み。配布用SeenTrackerへの統合、実API完全性確認、両ドメインでの日付機能実機検証、Phase 2以降は未実施。
