@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Civitai Seen Tracker
 // @namespace    http://tampermonkey.net/
-// @version      0.20
+// @version      0.21
 // @description  Tracks seen models on Civitai
 // @author       Antigravity
 // @match        https://civitai.com/*
@@ -25,12 +25,12 @@
 
     const style = document.createElement('style');
     style.textContent = `
-        body:not(.civitai-user-page) .civitai-seen-card {
+        body.civitai-seen-enabled .civitai-seen-card {
             opacity: ${SEEN_OPACITY} !important;
             transition: opacity 0.5s ease; 
             filter: grayscale(100%);
         }
-        body:not(.civitai-user-page) .civitai-seen-card:hover {
+        body.civitai-seen-enabled .civitai-seen-card:hover {
             opacity: 1 !important;
             filter: grayscale(0%);
         }
@@ -107,10 +107,11 @@
     function updatePageState() {
         const path = window.location.pathname;
 
-        if (path.startsWith('/user/')) {
-            document.body.classList.add('civitai-user-page');
+        // トップページ または /models ページでのみグレーアウトを有効化
+        if (path === '/' || path.startsWith('/models')) {
+            document.body.classList.add('civitai-seen-enabled');
         } else {
-            document.body.classList.remove('civitai-user-page');
+            document.body.classList.remove('civitai-seen-enabled');
         }
 
         const btn = document.getElementById('civitai-jump-btn');
