@@ -28,7 +28,7 @@
     const JUMP_EXCLUSION_SELECTOR = `${OVERLAY_SELECTOR}, nav, header, footer`;
 
     const seenModels = createSeenStore();
-    let isAutoScrolling = false;
+    let activeScrollSession = null;
 
     // 永続化: 既存のJSON配列・ID型・保存順序を維持し、新規閲覧時のみ書き込む。
     function createSeenStore() {
@@ -200,7 +200,7 @@
             // 画面に入った時 (Intersecting: true)
             if (entry.isIntersecting) {
                 // 自動スクロール中は既読に追加しない（通過しただけのモデルを既読にしない）
-                if (!isAutoScrolling) {
+                if (!activeScrollSession) {
                     seenModels.remember(modelId);
                 }
             }
@@ -320,9 +320,20 @@
         const btn = document.getElementById('civitai-jump-btn');
 
         // スクロール中にもう一度押したら中止
-        if (isAutoScrolling) {
-            isAutoScrolling = false;
+        if (activeScrollSession) {
+            activeScrollSession = null;
+            setJumpButtonScrolling(btn, false);
             return;
+        }
+
+        // 中止後すぐ再開しても、待機中の旧ループが新セッションに復帰しない。
+        const session = {};
+        const isCurrentSession = () => activeScrollSession === session;
+        function finishScrolling() {
+            if (!isCurrentSession()) return false;
+            activeScrollSession = null;
+            setJumpButtonScrolling(btn, false);
+            return true;
         }
 
         const MAX_ATTEMPTS = 300;
@@ -362,16 +373,14 @@
 
         // スクロール停止のヘルパー関数
         function stopScrolling(message, logMessage) {
-            isAutoScrolling = false;
-            setJumpButtonScrolling(btn, false);
+            if (!finishScrolling()) return;
             alert(message);
             console.log(`[Seen Tracker] ${logMessage}`);
         }
 
         // 境界到達時に最後の未読カードにスクロール＆ハイライト
         function scrollToLastUnseen(boundary) {
-            isAutoScrolling = false;
-            setJumpButtonScrolling(btn, false);
+            if (!finishScrolling()) return;
 
             const elapsed = Date.now() - startTime;
 
@@ -402,21 +411,23 @@
         }
 
         // === メインスクロールループ開始 ===
-        isAutoScrolling = true;
+        activeScrollSession = session;
         setJumpButtonScrolling(btn, true);
 
         console.log(`[Seen Tracker] 自動スクロール開始: 既読境界を検索 (既読数: ${seenModels.size})`);
 
-        while (isAutoScrolling && attempts < MAX_ATTEMPTS) {
+        while (isCurrentSession() && attempts < MAX_ATTEMPTS) {
             attempts++;
 
             // エラートースト検知
             if (detectFetchError()) {
                 console.log(`[Seen Tracker] [${attempts}] APIエラー検知 - ${ERROR_WAIT_MS}ms 待機します...`);
                 await sleep(ERROR_WAIT_MS);
+                if (!isCurrentSession()) return;
                 const closeButtons = document.querySelectorAll('.mantine-Notification-root button[aria-label="close"], .mantine-Notification-root [class*="closeButton"]');
                 closeButtons.forEach(b => b.click());
                 await sleep(500);
+                if (!isCurrentSession()) return;
                 continue;
             }
 
@@ -427,7 +438,7 @@
             scrollContainer.scrollTo({ top: targetScroll, behavior: 'smooth' });
             await sleep(SCROLL_WAIT_MS);
 
-            if (!isAutoScrolling) break;
+            if (!isCurrentSession()) return;
 
             // 「Load More」系ボタンがあればクリック
             const loadMoreBtn = document.querySelector('button[data-testid="loadMore"], button:has(> span:only-child)');
@@ -440,7 +451,7 @@
                 }
             }
 
-            if (!isAutoScrolling) break;
+            if (!isCurrentSession()) return;
 
             // 新しいカードを収集＆境界チェック
             collectNewCards();
@@ -494,8 +505,10 @@
                 }
                 scrollContainer.scrollBy({ top: -300, behavior: 'instant' });
                 await sleep(500);
+                if (!isCurrentSession()) return;
                 scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
                 await sleep(RETRY_WAIT_MS);
+                if (!isCurrentSession()) return;
             } else {
                 sameHeightCount = 0;
             }
@@ -508,8 +521,7 @@
         }
 
         // ループを抜けた（中止または最大試行回数到達）
-        isAutoScrolling = false;
-        setJumpButtonScrolling(btn, false);
+        if (!finishScrolling()) return;
         if (attempts >= MAX_ATTEMPTS) {
             console.log(`[Seen Tracker] 最大スクロール回数に到達しました。(${cardSequence.length}枚チェック)`);
         }

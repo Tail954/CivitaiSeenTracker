@@ -1,0 +1,352 @@
+TAP version 13
+# Subtest: civitai.com: existing string IDs load without writes; viewport entry saves once, exit applies style
+ok 1 - civitai.com: existing string IDs load without writes; viewport entry saves once, exit applies style
+  ---
+  duration_ms: 5.0346
+  type: 'test'
+  ...
+# Subtest: civitai.com: absent history is not initialized or cleared; mixed legacy values retain type/order
+ok 2 - civitai.com: absent history is not initialized or cleared; mixed legacy values retain type/order
+  ---
+  duration_ms: 2.3817
+  type: 'test'
+  ...
+# Subtest: civitai.com: card discovery excludes overlays/text/absolute links and accepts image-card classes
+ok 3 - civitai.com: card discovery excludes overlays/text/absolute links and accepts image-card classes
+  ---
+  duration_ms: 1.1326
+  type: 'test'
+  ...
+# Subtest: civitai.com: initial/delayed/mutation scans observe each link once, including added anchor roots
+ok 4 - civitai.com: initial/delayed/mutation scans observe each link once, including added anchor roots
+  ---
+  duration_ms: 1.1817
+  type: 'test'
+  ...
+# Subtest: civitai.com: card style targets Mantine Card/Paper/article, then grandparent or anchor fallback
+ok 5 - civitai.com: card style targets Mantine Card/Paper/article, then grandparent or anchor fallback
+  ---
+  duration_ms: 1.1697
+  type: 'test'
+  ...
+# Subtest: civitai.com: SPA push/replace/pop control CSS and button without recreating observers or UI
+ok 6 - civitai.com: SPA push/replace/pop control CSS and button without recreating observers or UI
+  ---
+  duration_ms: 1.7943
+  type: 'test'
+  ...
+# Subtest: civitai.com: existing non-list pages keep their original history registration behavior
+ok 7 - civitai.com: existing non-list pages keep their original history registration behavior
+  ---
+  duration_ms: 1.8407
+  type: 'test'
+  ...
+# Subtest: civitai.com: stylesheet retains dimming, grayscale, hover restoration and highlight rules
+ok 8 - civitai.com: stylesheet retains dimming, grayscale, hover restoration and highlight rules
+  ---
+  duration_ms: 0.9799
+  type: 'test'
+  ...
+# Subtest: civitai.com: jump with no history alerts and leaves scroll/storage untouched
+ok 9 - civitai.com: jump with no history alerts and leaves scroll/storage untouched
+  ---
+  duration_ms: 1.4235
+  type: 'test'
+  ...
+# Subtest: civitai.com: preloaded boundary needs ten cards and 80% seen; highlights last unseen and clears
+ok 10 - civitai.com: preloaded boundary needs ten cards and 80% seen; highlights last unseen and clears
+  ---
+  duration_ms: 2.4761
+  type: 'test'
+  ...
+# Subtest: civitai.com: all-seen preloaded boundary reports no new content
+ok 11 - civitai.com: all-seen preloaded boundary reports no new content
+  ---
+  duration_ms: 2.0693
+  type: 'test'
+  ...
+# Subtest: civitai.com: fewer than ten cards or less than 80% seen cannot stop the jump early
+ok 12 - civitai.com: fewer than ten cards or less than 80% seen cannot stop the jump early
+  ---
+  duration_ms: 5.2417
+  type: 'test'
+  ...
+# Subtest: civitai.com: jump uses the site scroll area and clamps movement at its maximum
+ok 13 - civitai.com: jump uses the site scroll area and clamps movement at its maximum
+  ---
+  duration_ms: 1.5572
+  type: 'test'
+  ...
+# Subtest: civitai.com: jump excludes nav/header/footer candidates but tracking keeps existing broader scope
+ok 14 - civitai.com: jump excludes nav/header/footer candidates but tracking keeps existing broader scope
+  ---
+  duration_ms: 4.4502
+  type: 'test'
+  ...
+# Subtest: civitai.com: jump suspends new seen registration; second click cancels and restores button
+ok 15 - civitai.com: jump suspends new seen registration; second click cancels and restores button
+  ---
+  duration_ms: 1.2311
+  type: 'test'
+  ...
+# Subtest: civitai.com: infinite-scroll additions reach boundary using last twenty unique IDs
+ok 16 - civitai.com: infinite-scroll additions reach boundary using last twenty unique IDs
+  ---
+  duration_ms: 3.2308
+  type: 'test'
+  ...
+# Subtest: civitai.com: boundary window drops older unseen cards; disconnected last unseen is safe
+ok 17 - civitai.com: boundary window drops older unseen cards; disconnected last unseen is safe
+  ---
+  duration_ms: 2.9547
+  type: 'test'
+  ...
+# Subtest: civitai.com: visible Load More is clicked; delayed cards are collected after retry wait
+ok 18 - civitai.com: visible Load More is clicked; delayed cards are collected after retry wait
+  ---
+  duration_ms: 2.391
+  type: 'test'
+  ...
+# Subtest: civitai.com: end of content stops on stale IDs and restores button
+ok 19 - civitai.com: end of content stops on stale IDs and restores button
+  ---
+  duration_ms: 1.674
+  type: 'test'
+  ...
+# Subtest: civitai.com: continuous new content without a boundary stops at the 90-second timeout
+ok 20 - civitai.com: continuous new content without a boundary stops at the 90-second timeout
+  ---
+  duration_ms: 26.9766
+  type: 'test'
+  ...
+# Subtest: civitai.com: fetch-error toast waits then closes and resumes; cancellation settles cleanly
+ok 21 - civitai.com: fetch-error toast waits then closes and resumes; cancellation settles cleanly
+  ---
+  duration_ms: 1.4583
+  type: 'test'
+  ...
+# Subtest: civitai.red: existing string IDs load without writes; viewport entry saves once, exit applies style
+ok 22 - civitai.red: existing string IDs load without writes; viewport entry saves once, exit applies style
+  ---
+  duration_ms: 0.8222
+  type: 'test'
+  ...
+# Subtest: civitai.red: absent history is not initialized or cleared; mixed legacy values retain type/order
+ok 23 - civitai.red: absent history is not initialized or cleared; mixed legacy values retain type/order
+  ---
+  duration_ms: 1.2201
+  type: 'test'
+  ...
+# Subtest: civitai.red: card discovery excludes overlays/text/absolute links and accepts image-card classes
+ok 24 - civitai.red: card discovery excludes overlays/text/absolute links and accepts image-card classes
+  ---
+  duration_ms: 0.8392
+  type: 'test'
+  ...
+# Subtest: civitai.red: initial/delayed/mutation scans observe each link once, including added anchor roots
+ok 25 - civitai.red: initial/delayed/mutation scans observe each link once, including added anchor roots
+  ---
+  duration_ms: 0.772
+  type: 'test'
+  ...
+# Subtest: civitai.red: card style targets Mantine Card/Paper/article, then grandparent or anchor fallback
+ok 26 - civitai.red: card style targets Mantine Card/Paper/article, then grandparent or anchor fallback
+  ---
+  duration_ms: 0.7444
+  type: 'test'
+  ...
+# Subtest: civitai.red: SPA push/replace/pop control CSS and button without recreating observers or UI
+ok 27 - civitai.red: SPA push/replace/pop control CSS and button without recreating observers or UI
+  ---
+  duration_ms: 0.8129
+  type: 'test'
+  ...
+# Subtest: civitai.red: existing non-list pages keep their original history registration behavior
+ok 28 - civitai.red: existing non-list pages keep their original history registration behavior
+  ---
+  duration_ms: 0.8193
+  type: 'test'
+  ...
+# Subtest: civitai.red: stylesheet retains dimming, grayscale, hover restoration and highlight rules
+ok 29 - civitai.red: stylesheet retains dimming, grayscale, hover restoration and highlight rules
+  ---
+  duration_ms: 0.6845
+  type: 'test'
+  ...
+# Subtest: civitai.red: jump with no history alerts and leaves scroll/storage untouched
+ok 30 - civitai.red: jump with no history alerts and leaves scroll/storage untouched
+  ---
+  duration_ms: 0.773
+  type: 'test'
+  ...
+# Subtest: civitai.red: preloaded boundary needs ten cards and 80% seen; highlights last unseen and clears
+ok 31 - civitai.red: preloaded boundary needs ten cards and 80% seen; highlights last unseen and clears
+  ---
+  duration_ms: 2.0042
+  type: 'test'
+  ...
+# Subtest: civitai.red: all-seen preloaded boundary reports no new content
+ok 32 - civitai.red: all-seen preloaded boundary reports no new content
+  ---
+  duration_ms: 1.4902
+  type: 'test'
+  ...
+# Subtest: civitai.red: fewer than ten cards or less than 80% seen cannot stop the jump early
+ok 33 - civitai.red: fewer than ten cards or less than 80% seen cannot stop the jump early
+  ---
+  duration_ms: 3.5693
+  type: 'test'
+  ...
+# Subtest: civitai.red: jump uses the site scroll area and clamps movement at its maximum
+ok 34 - civitai.red: jump uses the site scroll area and clamps movement at its maximum
+  ---
+  duration_ms: 1.4041
+  type: 'test'
+  ...
+# Subtest: civitai.red: jump excludes nav/header/footer candidates but tracking keeps existing broader scope
+ok 35 - civitai.red: jump excludes nav/header/footer candidates but tracking keeps existing broader scope
+  ---
+  duration_ms: 3.1079
+  type: 'test'
+  ...
+# Subtest: civitai.red: jump suspends new seen registration; second click cancels and restores button
+ok 36 - civitai.red: jump suspends new seen registration; second click cancels and restores button
+  ---
+  duration_ms: 0.9555
+  type: 'test'
+  ...
+# Subtest: civitai.red: infinite-scroll additions reach boundary using last twenty unique IDs
+ok 37 - civitai.red: infinite-scroll additions reach boundary using last twenty unique IDs
+  ---
+  duration_ms: 1.76
+  type: 'test'
+  ...
+# Subtest: civitai.red: boundary window drops older unseen cards; disconnected last unseen is safe
+ok 38 - civitai.red: boundary window drops older unseen cards; disconnected last unseen is safe
+  ---
+  duration_ms: 2.2307
+  type: 'test'
+  ...
+# Subtest: civitai.red: visible Load More is clicked; delayed cards are collected after retry wait
+ok 39 - civitai.red: visible Load More is clicked; delayed cards are collected after retry wait
+  ---
+  duration_ms: 1.3749
+  type: 'test'
+  ...
+# Subtest: civitai.red: end of content stops on stale IDs and restores button
+ok 40 - civitai.red: end of content stops on stale IDs and restores button
+  ---
+  duration_ms: 1.1357
+  type: 'test'
+  ...
+# Subtest: civitai.red: continuous new content without a boundary stops at the 90-second timeout
+ok 41 - civitai.red: continuous new content without a boundary stops at the 90-second timeout
+  ---
+  duration_ms: 21.7743
+  type: 'test'
+  ...
+# Subtest: civitai.red: fetch-error toast waits then closes and resumes; cancellation settles cleanly
+ok 42 - civitai.red: fetch-error toast waits then closes and resumes; cancellation settles cleanly
+  ---
+  duration_ms: 1.2438
+  type: 'test'
+  ...
+# Subtest: domains retain separate origin-local histories
+ok 43 - domains retain separate origin-local histories
+  ---
+  duration_ms: 1.3461
+  type: 'test'
+  ...
+# Subtest: distribution metadata and entire injected CSS match the selected GitHub v0.20 baseline
+ok 44 - distribution metadata and entire injected CSS match the selected GitHub v0.20 baseline
+  ---
+  duration_ms: 79.2164
+  type: 'test'
+  ...
+# Subtest: repeated script initialization creates no duplicate UI, observers, timers or history hooks
+ok 45 - repeated script initialization creates no duplicate UI, observers, timers or history hooks
+  ---
+  duration_ms: 1.1153
+  type: 'test'
+  ...
+# Subtest: civitai.com: session cancellation: restart during normal scroll wait retires the old loop without resetting new UI
+ok 46 - civitai.com: session cancellation: restart during normal scroll wait retires the old loop without resetting new UI
+  ---
+  duration_ms: 7.5893
+  type: 'test'
+  ...
+# Subtest: civitai.com: session cancellation: restart during fetch-error wait lets only the new session dismiss the toast
+ok 47 - civitai.com: session cancellation: restart during fetch-error wait lets only the new session dismiss the toast
+  ---
+  duration_ms: 2.6129
+  type: 'test'
+  ...
+# Subtest: civitai.com: session cancellation: restart during post-toast pause cannot resume the old error loop
+ok 48 - civitai.com: session cancellation: restart during post-toast pause cannot resume the old error loop
+  ---
+  duration_ms: 1.7514
+  type: 'test'
+  ...
+# Subtest: civitai.com: session cancellation: restart during Load More wait prevents stale collection and cleanup
+ok 49 - civitai.com: session cancellation: restart during Load More wait prevents stale collection and cleanup
+  ---
+  duration_ms: 1.6188
+  type: 'test'
+  ...
+# Subtest: civitai.com: session cancellation: restart during height-retry pause prevents the stale jump to page bottom
+ok 50 - civitai.com: session cancellation: restart during height-retry pause prevents the stale jump to page bottom
+  ---
+  duration_ms: 2.2555
+  type: 'test'
+  ...
+# Subtest: civitai.com: session cancellation: restart during height-retry load wait prevents stale continuation
+ok 51 - civitai.com: session cancellation: restart during height-retry load wait prevents stale continuation
+  ---
+  duration_ms: 1.95
+  type: 'test'
+  ...
+# Subtest: civitai.red: session cancellation: restart during normal scroll wait retires the old loop without resetting new UI
+ok 52 - civitai.red: session cancellation: restart during normal scroll wait retires the old loop without resetting new UI
+  ---
+  duration_ms: 1.6937
+  type: 'test'
+  ...
+# Subtest: civitai.red: session cancellation: restart during fetch-error wait lets only the new session dismiss the toast
+ok 53 - civitai.red: session cancellation: restart during fetch-error wait lets only the new session dismiss the toast
+  ---
+  duration_ms: 1.6247
+  type: 'test'
+  ...
+# Subtest: civitai.red: session cancellation: restart during post-toast pause cannot resume the old error loop
+ok 54 - civitai.red: session cancellation: restart during post-toast pause cannot resume the old error loop
+  ---
+  duration_ms: 2.0424
+  type: 'test'
+  ...
+# Subtest: civitai.red: session cancellation: restart during Load More wait prevents stale collection and cleanup
+ok 55 - civitai.red: session cancellation: restart during Load More wait prevents stale collection and cleanup
+  ---
+  duration_ms: 2.5819
+  type: 'test'
+  ...
+# Subtest: civitai.red: session cancellation: restart during height-retry pause prevents the stale jump to page bottom
+ok 56 - civitai.red: session cancellation: restart during height-retry pause prevents the stale jump to page bottom
+  ---
+  duration_ms: 1.7413
+  type: 'test'
+  ...
+# Subtest: civitai.red: session cancellation: restart during height-retry load wait prevents stale continuation
+ok 57 - civitai.red: session cancellation: restart during height-retry load wait prevents stale continuation
+  ---
+  duration_ms: 1.6888
+  type: 'test'
+  ...
+1..57
+# tests 57
+# suites 0
+# pass 57
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 332.3114

@@ -1,0 +1,21 @@
+2026-10-19 JST / Sol-A / Phase 0 review follow-up
+
+Available connected browser: ChatGPT in-app browser (no Chrome/Edge session).
+https://civitai.com/models:
+  Rejected by the browser site-safety policy before observation.
+  No user approval or Auto-review was attempted by the browser tool.
+  No alternative domain/browser/transport was used to access the blocked site.
+https://civitai.red/models:
+  Not attempted; no live-site verification claim for either domain.
+
+Materially safer alternative: an authored synthetic loopback fixture, with no
+Civitai content or network requests. tests/browser/server.cjs started successfully
+on 127.0.0.1:50604. The in-app browser navigation to that local URL reported
+net::ERR_CONNECTION_TIMED_OUT. The fixture checks did not execute.
+The local server was stopped after the attempt.
+
+node --check tests/browser/server.cjs: PASS
+node --check tests/browser/fixture.js: PASS
+
+Real browser layout/Observer/CSS/hover, actual site DOM and infinite-scroll
+network behavior, and the Tampermonkey sandbox remain UNVERIFIED.
