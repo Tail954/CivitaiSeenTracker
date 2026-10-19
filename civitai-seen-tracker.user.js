@@ -30,8 +30,8 @@
     const seenModels = createSeenStore();
     let activeScrollSession = null;
     const dateFilterApi = createCivitaiDateFilterModule();
-    // Enable each host only after its complete detail response has been verified.
-    const DATE_API_CONTRACTS = { 'civitai.com': '', 'civitai.red': '' };
+    // 2026-10-19: user verified model 1593793 on both hosts against the detail UI.
+    const DATE_API_CONTRACTS = { 'civitai.com': 'detail-v1-2026-10-19', 'civitai.red': 'detail-v1-2026-10-19' };
     const dateCardListeners = new Set();
     let dateFilter = null;
     let cardTracker = null;
@@ -335,6 +335,10 @@
         const mutationObserver = new MutationObserver((mutations) => {
             let changed = false;
             mutations.forEach(mutation => {
+                if (mutation.type !== 'attributes') {
+                    const enclosingLink = mutation.target?.closest?.(CARD_LINK_SELECTOR);
+                    if (enclosingLink) { processNode(enclosingLink); changed = true; }
+                }
                 if (mutation.type === 'attributes') {
                     processNode(mutation.target);
                     changed = true;

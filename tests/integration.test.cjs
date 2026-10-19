@@ -151,13 +151,27 @@ test('the distributed file contains the current date module without an external 
 
 test('an unverified host does not fetch or hide cards and clearly reports the restriction', async () => {
     let calls = 0;
-    const h = createHarness(source, { dateSettings: null, cards: ['1'], fetchImpl: async () => { calls++; return response(1); } });
+    const unverified = source.replace(/const DATE_API_CONTRACTS = [^;]+;/,
+        "const DATE_API_CONTRACTS = { 'civitai.com': '', 'civitai.red': '' };");
+    const h = createHarness(unverified, { dateSettings: null, cards: ['1'], fetchImpl: async () => { calls++; return response(1); } });
     await h.advance(0);
     assert.equal(calls, 0);
     assert.equal(hidden(h.initialCards[0]), false);
     h.enter(h.initialCards[0].link);
     assert.deepEqual(h.stored(), []);
     assert.ok(h.document.querySelectorAll('p').some(node => node.textContent.includes('未検証')));
+});
+
+test('the distributed configuration enables the user-verified API contract on both hosts', async () => {
+    for (const host of ['civitai.com', 'civitai.red']) {
+        let calls = 0;
+        const h = createHarness(source, { host, dateSettings: null, cards: ['1'],
+            fetchImpl: async () => { calls++; return response(1); } });
+        await h.advance(0);
+        assert.equal(calls, 1);
+        h.enter(h.initialCards[0].link);
+        assert.deepEqual(h.stored(), ['1']);
+    }
 });
 
 test('a timed-out request releases a queue slot and remains visible and unrecorded', async () => {
@@ -215,4 +229,21 @@ test('removed/recycled cards are restored and removed pending requests are abort
     h.mutations[0].callback([{ type: 'attributes', target: first.link, attributeName: 'href' }]);
     assert.equal(hidden(first), false);
     assert.equal(h.intersections[0].targets.has(first.link), false);
+});
+
+test('an image inserted later into an existing link becomes a tracked and filtered card', async () => {
+    let calls = 0;
+    const h = createHarness(fixtureSource, { dateSettings: null, cards: [{ id: '1', image: false }],
+        fetchImpl: async () => { calls++; return response(1, dates.yesterday); } });
+    await h.advance(0);
+    assert.equal(calls, 0);
+    const link = h.initialCards[0].link;
+    const image = link.appendChild(h.document.createElement('img'));
+    h.mutations[0].callback([{ type: 'childList', target: link, addedNodes: [image] }]);
+    assert.equal(h.intersections[0].targets.has(link), true);
+    h.enter(link);
+    assert.deepEqual(h.stored(), []);
+    await h.advance(0);
+    assert.equal(calls, 1);
+    assert.equal(hidden(h.initialCards[0]), true);
 });
