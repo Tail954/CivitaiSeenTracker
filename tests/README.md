@@ -10,10 +10,10 @@ node --test --test-reporter=spec tests/regression.test.cjs
 git diff --check
 ```
 
-提供済みv0.21（リファクタリング前）の同じ回帰項目を検証する場合:
+ユーザーが指定したGitHub v0.20（リファクタリング前）の同じ回帰項目を検証する場合:
 
 ```powershell
-$env:SEEN_TRACKER_SOURCE_REF = '9e7072364a9f64ccc17869eb4a02b5bfa05d9007'
+$env:SEEN_TRACKER_SOURCE_REF = '5ae0577c0c5cc272427aef7a7123fa54bad444bd'
 try {
     node --test --test-reporter=spec tests/regression.test.cjs
 } finally {
@@ -21,7 +21,7 @@ try {
 }
 ```
 
-ベースラインは43件、変更後は45件。変更後のみ、メタデータ/CSS全文のベースラインとの一致、および再実行時の多重初期化防止を追加検証する。結果は`results/baseline.txt`と`results/phase0.txt`。
+ベースラインは43件、基準版調整後は45件。変更後のみ、メタデータ/CSS全文のv0.20との一致、および再実行時の多重初期化防止を追加検証する。今回の結果は`results/baseline-v020.txt`と`results/aligned-v020.txt`。`results/baseline.txt`と`results/phase0.txt`は最初のv0.21基準の履歴として保存している。
 
 ## 自動検証範囲と限界
 
@@ -37,6 +37,6 @@ try {
 2. 未読カードが画面に入ると履歴に追加され、退出後に薄い白黒表示となること。保存済みカードは初めから薄く、ホバーで元表示へ戻ること。
 3. 通知ドロワー・ダイアログ内のリンクで履歴が増えないこと。検索・ソート・タグ変更と追加読み込みのカードも追跡できること。
 4. ジャンプで追加読み込みが続き、通過カードを新たに保存せず、既読境界で最後の未読へ移動して強調が消えること。途中キャンセルと末尾停止でボタンが戻ること。
-5. SPAのpush/replace/戻る/進む後、`/`・`/models`系の既存表示制御が維持されること。他ページで表示効果が増えないこと。ボタン/スタイル/Observer/履歴フックが重複しないこと。
+5. SPAのpush/replace/戻る/進む後、`/user/`だけ既読CSSを無効化し、ジャンプボタンは`/`・`/models`系だけ表示すること。`/images`等でも既読CSSが有効であること。ボタン/スタイル/Observer/履歴フックが重複しないこと。
 
-既存挙動として、`/models/123`や`/models-other`も`startsWith('/models')`に該当し、非一覧ページでも画像リンクの履歴登録自体は続く。READMEの「画面外で記録」に対し実装は「進入で記録」。これらをPhase 0で仕様変更しない。
+v0.20の既存挙動として、`/models/123`や`/models-other`もジャンプボタンの`startsWith('/models')`に該当し、非一覧ページでも画像リンクの履歴登録自体は続く。READMEの「画面外で記録」に対し実装は「進入で記録」。これらをPhase 0で仕様変更しない。

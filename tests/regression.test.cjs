@@ -109,15 +109,22 @@ for (const host of ['civitai.com', 'civitai.red']) {
         const h = make({ path: '/user/example' });
         await h.advance(1500);
         assert.equal(h.button().style.display, 'none');
+        assert.equal(h.document.body.classList.contains('civitai-user-page'), true);
         for (const pathname of ['/', '/models', '/models?sort=Newest', '/models/123', '/models-other']) {
             h.history.pushState({}, '', pathname);
-            assert.equal(h.document.body.classList.contains('civitai-seen-enabled'), true);
+            assert.equal(h.document.body.classList.contains('civitai-user-page'), false);
             assert.equal(h.button().style.display, 'flex');
         }
-        h.history.replaceState({}, '', '/images');
+        for (const pathname of ['/images', '/posts', '/user', '/user-other']) {
+            h.history.replaceState({}, '', pathname);
+            assert.equal(h.button().style.display, 'none');
+            assert.equal(h.document.body.classList.contains('civitai-user-page'), false);
+        }
+        h.pop('/user/example/models');
+        assert.equal(h.document.body.classList.contains('civitai-user-page'), true);
         assert.equal(h.button().style.display, 'none');
-        assert.equal(h.document.body.classList.contains('civitai-seen-enabled'), false);
         h.pop('/models');
+        assert.equal(h.document.body.classList.contains('civitai-user-page'), false);
         assert.equal(h.button().style.display, 'flex');
         assert.equal(h.events.get('popstate').length, 1);
         assert.equal(h.intersections.length, 1);
@@ -130,14 +137,14 @@ for (const host of ['civitai.com', 'civitai.red']) {
         await h.advance(1500);
         h.enter(h.initialCards[0].link);
         assert.deepEqual(h.stored(), ['1']);
-        assert.equal(h.document.body.classList.contains('civitai-seen-enabled'), false);
+        assert.equal(h.document.body.classList.contains('civitai-user-page'), true);
     });
 
     scenario('stylesheet retains dimming, grayscale, hover restoration and highlight rules', make => {
         const h = make();
         const css = h.document.head.querySelector('style').textContent;
-        assert.match(css, /body\.civitai-seen-enabled \.civitai-seen-card\s*\{[^}]*opacity: 0\.3 !important;[^}]*filter: grayscale\(100%\)/);
-        assert.match(css, /body\.civitai-seen-enabled \.civitai-seen-card:hover\s*\{[^}]*opacity: 1 !important;[^}]*filter: grayscale\(0%\)/);
+        assert.match(css, /body:not\(\.civitai-user-page\) \.civitai-seen-card\s*\{[^}]*opacity: 0\.3 !important;[^}]*filter: grayscale\(100%\)/);
+        assert.match(css, /body:not\(\.civitai-user-page\) \.civitai-seen-card:hover\s*\{[^}]*opacity: 1 !important;[^}]*filter: grayscale\(0%\)/);
         assert.match(css, /\.civitai-last-seen-highlight\s*\{/);
         assert.match(source, new RegExp(`// @match\\s+https://${host.replace('.', '\\.')}\x2f\\*`));
     });
@@ -368,8 +375,8 @@ test('domains retain separate origin-local histories', () => {
 // This is an intentional Phase 0 lifecycle improvement, separate from the
 // characterization cases above, which must also pass on the supplied baseline.
 if (!baselineRef) {
-    test('distribution metadata and entire injected CSS match the supplied v0.21 baseline', () => {
-        const original = execFileSync('git', ['show', '9e7072364a9f64ccc17869eb4a02b5bfa05d9007:civitai-seen-tracker.user.js'], { cwd: root, encoding: 'utf8' });
+    test('distribution metadata and entire injected CSS match the selected GitHub v0.20 baseline', () => {
+        const original = execFileSync('git', ['show', '5ae0577c0c5cc272427aef7a7123fa54bad444bd:civitai-seen-tracker.user.js'], { cwd: root, encoding: 'utf8' });
         const metadata = script => script.match(/\/\/ ==UserScript==[\s\S]*?\/\/ ==\/UserScript==/)[0].replace(/\r\n/g, '\n');
         assert.equal(metadata(source), metadata(original));
         const before = createHarness(original);

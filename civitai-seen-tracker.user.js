@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Civitai Seen Tracker
 // @namespace    http://tampermonkey.net/
-// @version      0.21
+// @version      0.20
 // @description  Tracks seen models on Civitai
 // @author       Antigravity
 // @match        https://civitai.com/*
@@ -48,12 +48,12 @@
     function installStyles() {
         const style = document.createElement('style');
         style.textContent = `
-        body.civitai-seen-enabled .civitai-seen-card {
+        body:not(.civitai-user-page) .civitai-seen-card {
             opacity: ${SEEN_OPACITY} !important;
             transition: opacity 0.5s ease; 
             filter: grayscale(100%);
         }
-        body.civitai-seen-enabled .civitai-seen-card:hover {
+        body:not(.civitai-user-page) .civitai-seen-card:hover {
             opacity: 1 !important;
             filter: grayscale(0%);
         }
@@ -140,19 +140,18 @@
         setTimeout(() => card.classList.remove('civitai-last-seen-highlight'), 3500);
     }
 
-    // ページライフサイクル: v0.21の既存パス判定をそのまま共有する。
-    function isEnabledPage() {
+    // v0.20では、既読CSSの対象とジャンプボタンの表示対象が異なる。
+    function isJumpEnabledPage() {
         const path = window.location.pathname;
         return path === '/' || path.startsWith('/models');
     }
 
     function updatePageState() {
-        const enabled = isEnabledPage();
-        document.body.classList.toggle('civitai-seen-enabled', enabled);
+        document.body.classList.toggle('civitai-user-page', window.location.pathname.startsWith('/user/'));
 
         const btn = document.getElementById('civitai-jump-btn');
         if (btn) {
-            btn.style.display = enabled ? 'flex' : 'none';
+            btn.style.display = isJumpEnabledPage() ? 'flex' : 'none';
         }
     }
 
