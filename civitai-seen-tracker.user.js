@@ -22,15 +22,36 @@
 
     let seenModels = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
     let isAutoScrolling = false;
+    let scrollSession = 0;
+    let isActivePage = false;
+    let scanTimer;
+    let jumpTimer;
+    const trackedLinks = new Set();
+    const styledCards = new Set();
+
+    function isModelsPage() {
+        return ['civitai.com', 'civitai.red'].includes(window.location.hostname)
+            && /^\/models\/?$/.test(window.location.pathname);
+    }
+
+    function cancelAutoScroll() {
+        scrollSession++;
+        isAutoScrolling = false;
+        const btn = document.getElementById('civitai-jump-btn');
+        if (btn) {
+            btn.classList.remove('scrolling');
+            btn.querySelector('.btn-icon').textContent = '⏬';
+        }
+    }
 
     const style = document.createElement('style');
     style.textContent = `
-        body:not(.civitai-user-page) .civitai-seen-card {
+        body.civitai-seen-enabled .civitai-seen-card {
             opacity: ${SEEN_OPACITY} !important;
             transition: opacity 0.5s ease; 
             filter: grayscale(100%);
         }
-        body:not(.civitai-user-page) .civitai-seen-card:hover {
+        body.civitai-seen-enabled .civitai-seen-card:hover {
             opacity: 1 !important;
             filter: grayscale(0%);
         }
@@ -91,7 +112,7 @@
         #civitai-jump-btn:hover + #civitai-jump-tooltip {
             opacity: 1;
         }
-        .civitai-last-seen-highlight {
+        body.civitai-seen-enabled .civitai-last-seen-highlight {
             outline: 3px solid #6366f1 !important;
             outline-offset: 2px;
             animation: civitai-highlight-fade 3s ease forwards;
@@ -102,29 +123,37 @@
             100% { outline-color: transparent; }
         }
     `;
-    document.head.appendChild(style);
-
     function updatePageState() {
-        const path = window.location.pathname;
+        const enabled = isModelsPage();
+        if (enabled === isActivePage) return;
+        isActivePage = enabled;
+        document.body.classList.toggle('civitai-seen-enabled', enabled);
 
-        if (path.startsWith('/user/')) {
-            document.body.classList.add('civitai-user-page');
+        if (enabled) {
+            document.head.appendChild(style);
+            mutationObserver.observe(document.body, { childList: true, subtree: true });
+            scanDocument(document.body);
+            scanTimer = setTimeout(() => scanDocument(document.body), 1000);
+            jumpTimer = setTimeout(createJumpButton, 1500);
         } else {
-            document.body.classList.remove('civitai-user-page');
-        }
-
-        const btn = document.getElementById('civitai-jump-btn');
-        if (btn) {
-            // トップページ または /models ページでのみボタンを表示
-            if (path === '/' || path.startsWith('/models')) {
-                btn.style.display = 'flex';
-            } else {
-                btn.style.display = 'none';
+            cancelAutoScroll();
+            clearTimeout(scanTimer);
+            clearTimeout(jumpTimer);
+            observer.disconnect();
+            mutationObserver.disconnect();
+            for (const link of trackedLinks) delete link.dataset.civitaiSeenObserver;
+            trackedLinks.clear();
+            for (const card of styledCards) {
+                card.classList.remove('civitai-seen-card', 'civitai-last-seen-highlight');
             }
+            styledCards.clear();
+            document.getElementById('civitai-jump-btn')?.remove();
+            document.getElementById('civitai-jump-tooltip')?.remove();
+            style.remove();
         }
     }
 
-    // SPAのURL変更を監視
+    // @matchはSPAの入場検知用。機能は上記の/models一覧でのみ有効化する。
     const originalPushState = history.pushState;
     history.pushState = function () {
         originalPushState.apply(this, arguments);
@@ -136,7 +165,6 @@
         updatePageState();
     };
     window.addEventListener('popstate', updatePageState);
-    updatePageState();
 
     function saveSeenModels() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify([...seenModels]));
@@ -148,10 +176,12 @@
     }
 
     function applySeenStyle(cardElement) {
+        styledCards.add(cardElement);
         cardElement.classList.add('civitai-seen-card');
     }
 
     const observer = new IntersectionObserver((entries) => {
+        if (!isActivePage || !isModelsPage()) return;
         entries.forEach(entry => {
             const element = entry.target; // <a> tag
             const href = element.getAttribute('href');
@@ -189,6 +219,7 @@
     });
 
     function processNode(node) {
+        if (!isActivePage || !isModelsPage()) return;
         if (node.tagName === 'A' && node.getAttribute('href')?.startsWith('/models/')) {
             // 通知パネル（ドロワーやダイアログ）の中にあるリンクは対象外にする
             if (node.closest('.mantine-Drawer-root, .mantine-Drawer-body, .mantine-Popover-dropdown, .mantine-Modal-root, [role="dialog"], [role="presentation"]')) return;
@@ -200,6 +231,7 @@
 
             if (node.dataset.civitaiSeenObserver) return;
             node.dataset.civitaiSeenObserver = 'true';
+            trackedLinks.add(node);
 
             const href = node.getAttribute('href');
             const match = href.match(/\/models\/(\d+)/);
@@ -215,6 +247,7 @@
     }
 
     function scanDocument(rootNode) {
+        if (!isActivePage || !isModelsPage()) return;
         const links = rootNode.querySelectorAll ? rootNode.querySelectorAll('a[href^="/models/"]') : [];
         links.forEach(processNode);
         if (rootNode.tagName === 'A' && rootNode.getAttribute('href')?.startsWith('/models/')) {
@@ -223,18 +256,13 @@
     }
 
     const mutationObserver = new MutationObserver((mutations) => {
+        if (!isActivePage || !isModelsPage()) return;
         mutations.forEach(mutation => {
             mutation.addedNodes.forEach(node => {
                 if (node.nodeType === 1) scanDocument(node);
             });
         });
     });
-
-    mutationObserver.observe(document.body, { childList: true, subtree: true });
-
-    // 遅延実行で確実にDOM取得
-    setTimeout(() => scanDocument(document.body), 1000);
-    scanDocument(document.body);
 
     // --- ジャンプボタン ---
 
@@ -265,6 +293,7 @@
     }
 
     async function autoScrollToBoundary() {
+        if (!isActivePage || !isModelsPage()) return;
         if (seenModels.size === 0) {
             alert('まだ閲覧履歴がありません。');
             return;
@@ -275,9 +304,12 @@
 
         // スクロール中にもう一度押したら中止
         if (isAutoScrolling) {
-            isAutoScrolling = false;
+            cancelAutoScroll();
             return;
         }
+        const session = ++scrollSession;
+        const isCurrentSession = () => isActivePage && isModelsPage()
+            && isAutoScrolling && session === scrollSession;
 
         const MAX_ATTEMPTS = 300;
         const SCROLL_STEP_PX = 3000;
@@ -357,6 +389,7 @@
 
             if (lastUnseenCard && lastUnseenCard.link.isConnected) {
                 const card = getCardElement(lastUnseenCard.link);
+                styledCards.add(card);
                 card.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 card.classList.add('civitai-last-seen-highlight');
                 setTimeout(() => card.classList.remove('civitai-last-seen-highlight'), 3500);
@@ -376,6 +409,7 @@
         if (preCheck.found) {
             if (lastUnseenCard) {
                 const card = getCardElement(lastUnseenCard.link);
+                styledCards.add(card);
                 card.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 card.classList.add('civitai-last-seen-highlight');
                 setTimeout(() => card.classList.remove('civitai-last-seen-highlight'), 3500);
@@ -394,16 +428,18 @@
 
         console.log(`[Seen Tracker] 自動スクロール開始: 既読境界を検索 (既読数: ${seenModels.size})`);
 
-        while (isAutoScrolling && attempts < MAX_ATTEMPTS) {
+        while (isCurrentSession() && attempts < MAX_ATTEMPTS) {
             attempts++;
 
             // エラートースト検知
             if (detectFetchError()) {
                 console.log(`[Seen Tracker] [${attempts}] APIエラー検知 - ${ERROR_WAIT_MS}ms 待機します...`);
                 await sleep(ERROR_WAIT_MS);
+                if (!isCurrentSession()) return;
                 const closeButtons = document.querySelectorAll('.mantine-Notification-root button[aria-label="close"], .mantine-Notification-root [class*="closeButton"]');
                 closeButtons.forEach(b => b.click());
                 await sleep(500);
+                if (!isCurrentSession()) return;
                 continue;
             }
 
@@ -414,7 +450,7 @@
             scrollContainer.scrollTo({ top: targetScroll, behavior: 'smooth' });
             await sleep(SCROLL_WAIT_MS);
 
-            if (!isAutoScrolling) break;
+            if (!isCurrentSession()) return;
 
             // 「Load More」系ボタンがあればクリック
             const loadMoreBtn = document.querySelector('button[data-testid="loadMore"], button:has(> span:only-child)');
@@ -427,7 +463,7 @@
                 }
             }
 
-            if (!isAutoScrolling) break;
+            if (!isCurrentSession()) return;
 
             // 新しいカードを収集＆境界チェック
             collectNewCards();
@@ -481,8 +517,10 @@
                 }
                 scrollContainer.scrollBy({ top: -300, behavior: 'instant' });
                 await sleep(500);
+                if (!isCurrentSession()) return;
                 scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
                 await sleep(RETRY_WAIT_MS);
+                if (!isCurrentSession()) return;
             } else {
                 sameHeightCount = 0;
             }
@@ -495,6 +533,7 @@
         }
 
         // ループを抜けた（中止または最大試行回数到達）
+        if (!isCurrentSession()) return;
         isAutoScrolling = false;
         btn.classList.remove('scrolling');
         btn.querySelector('.btn-icon').textContent = '⏬';
@@ -504,6 +543,7 @@
     }
 
     function createJumpButton() {
+        if (!isActivePage || !isModelsPage() || document.getElementById('civitai-jump-btn')) return;
         const btn = document.createElement('button');
         btn.id = 'civitai-jump-btn';
         btn.title = '前回の閲覧境界までスクロール';
@@ -523,8 +563,8 @@
         updatePageState();
     }
 
-    // ページ読み込み後にボタン追加
-    setTimeout(createJumpButton, 1500);
+    // Observer等の初期化後に、現在のURLに応じて起動する。
+    updatePageState();
 
-    console.log('Civitai Seen Tracker v0.20 (visibility-control) started');
+    if (isActivePage) console.log('Civitai Seen Tracker v0.20 (models-only) started');
 })();
